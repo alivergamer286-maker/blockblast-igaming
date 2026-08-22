@@ -96,6 +96,6 @@ export async function login(emailOrUsername: string, password: string) {
 
 function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: config.jwt.expiresIn as string,
+    expiresIn: 60 * 60 * 24 * 7, // 7 days in seconds
   });
 }

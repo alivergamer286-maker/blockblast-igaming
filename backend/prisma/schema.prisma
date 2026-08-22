@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  username      String         @unique
+  passwordHash  String
+  balance       Decimal        @default(1000) @db.Decimal(18, 2)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sessions      GameSession[]
+  transactions  Transaction[]
+  scores        Score[]
+
+  @@index([email])
+  @@index([username])
+}
+
+model GameSession {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+  status        String     @default("active")
+  score         Int        @default(0)
+  linesCleared  Int        @default(0)
+  combos        Int        @default(0)
+  maxCombo      Int        @default(0)
+  boardState    Json
+  currentPieces Json
+  pieceIndex    Int        @default(0)
+  betAmount     Decimal    @default(0) @db.Decimal(18, 2)
+  payout        Decimal    @default(0) @db.Decimal(18, 2)
+  startedAt     DateTime   @default(now())
+  endedAt       DateTime?
+  moves         Move[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([score])
+}
+
+model Move {
+  id            String      @id @default(uuid())
+  sessionId     String
+  session       GameSession @relation(fields: [sessionId], references: [id])
+  pieceIndex    Int
+  pieceShape    Json
+  positionX     Int
+  positionY     Int
+  linesCleared  Int         @default(0)
+  pointsEarned  Int         @default(0)
+  boardAfter    Json
+  createdAt     DateTime    @default(now())
+
+  @@index([sessionId])
+}
+
+model Transaction {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  type          String
+  amount        Decimal  @db.Decimal(18, 2)
+  balanceAfter  Decimal  @db.Decimal(18, 2)
+  reference     String?
+  description   String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Score {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  score         Int
+  linesCleared  Int
+  maxCombo      Int
+  durationMs    Int?
+  createdAt     DateTime @default(now())
+
+  @@index([score])
+  @@index([createdAt])
+  @@index([userId, score])
+}

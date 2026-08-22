@@ -9,6 +9,14 @@ import { Piece } from "../game/pieces";
 import { debit, credit } from "./wallet.service";
 import { config } from "../config";
 
+function asBoard(value: unknown): Board {
+  return value as Board;
+}
+
+function asPieces(value: unknown): Piece[] {
+  return value as Piece[];
+}
+
 export async function startSession(userId: string, betAmount: number = 0) {
   if (betAmount < 0 || betAmount > config.maxBet) {
     throw new Error(`Bet must be between 0 and ${config.maxBet}`);
@@ -33,8 +41,8 @@ export async function startSession(userId: string, betAmount: number = 0) {
       linesCleared: 0,
       combos: 0,
       maxCombo: 0,
-      boardState: state.board as any,
-      currentPieces: state.pieces as any,
+      boardState: state.board as object,
+      currentPieces: state.pieces as object,
       pieceIndex: 0,
       betAmount,
     },
@@ -61,8 +69,8 @@ export async function placePiece(
 
   if (!session) throw new Error("Active session not found");
 
-  const board = session.boardState as Board;
-  const pieces = session.currentPieces as Piece[];
+  const board = asBoard(session.boardState);
+  const pieces = asPieces(session.currentPieces);
 
   const state: GameState = {
     board,
@@ -89,18 +97,28 @@ export async function placePiece(
     data: {
       sessionId,
       pieceIndex,
-      pieceShape: pieces[pieceIndex].shape as any,
+      pieceShape: pieces[pieceIndex].shape as object,
       positionX: col,
       positionY: row,
       linesCleared: result.linesCleared,
       pointsEarned: result.totalPoints,
-      boardAfter: result.board as any,
+      boardAfter: result.board as object,
     },
   });
 
-  const updateData: any = {
-    boardState: result.board,
-    currentPieces: remainingPieces,
+  const updateData: {
+    boardState: object;
+    currentPieces: object;
+    score: number;
+    linesCleared: number;
+    combos: number;
+    maxCombo: number;
+    status?: string;
+    endedAt?: Date;
+    payout?: number;
+  } = {
+    boardState: result.board as object,
+    currentPieces: remainingPieces as object,
     score: newScore,
     linesCleared: newLines,
     combos: newCombo,

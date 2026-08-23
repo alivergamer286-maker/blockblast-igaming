@@ -12,6 +12,8 @@ RUN npm install
 COPY tsconfig.json ./
 COPY src ./src
 
+# prisma generate only needs a valid-looking URL at build time; real URL is used at runtime
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
 RUN npx prisma generate
 RUN npx tsc
 
@@ -28,8 +30,9 @@ COPY prisma ./prisma
 
 RUN npm install --omit=dev
 
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
+RUN npx prisma generate
+
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 3000

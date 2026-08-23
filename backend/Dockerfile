@@ -12,7 +12,6 @@ RUN npm install
 COPY tsconfig.json ./
 COPY src ./src
 
-# prisma generate only needs a valid-looking URL at build time; real URL is used at runtime
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
 RUN npx prisma generate
 RUN npx tsc
@@ -37,4 +36,5 @@ COPY --from=builder /app/dist ./dist
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# Start server first; migrate runs in the same shell before listen only if DB is up
+CMD ["sh", "-c", "npx prisma migrate deploy; node dist/index.js"]

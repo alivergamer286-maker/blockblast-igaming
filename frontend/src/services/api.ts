@@ -37,8 +37,12 @@ export const getTransactions = () => api.get("/wallet/transactions");
 export const startGame = (betAmount = 0) =>
   api.post("/game/start", { betAmount });
 
-export const placePiece = (sessionId: string, pieceIndex: number, row: number, col: number) =>
-  api.post("/game/place", { sessionId, pieceIndex, row, col });
+export const placePiece = (
+  sessionId: string,
+  pieceIndex: number,
+  row: number,
+  col: number
+) => api.post("/game/place", { sessionId, pieceIndex, row, col });
 
 export const endGame = (sessionId: string) =>
   api.post("/game/end", { sessionId });
@@ -46,3 +50,27 @@ export const endGame = (sessionId: string) =>
 export const getLeaderboard = () => api.get("/leaderboard");
 export const getDailyLeaderboard = () => api.get("/leaderboard/daily");
 export const getHistory = () => api.get("/history");
+
+// Admin
+export const adminStats = () => api.get("/admin/stats");
+export const adminUsers = (page = 1, search = "") =>
+  api.get("/admin/users", { params: { page, search: search || undefined } });
+export const adminSetStatus = (
+  id: string,
+  status: string,
+  banReason?: string
+) => api.patch(`/admin/users/${id}/status`, { status, banReason });
+export const adminAdjustBalance = (
+  id: string,
+  amount: number,
+  reason: string
+) => api.post(`/admin/users/${id}/balance`, { amount, reason });
+export const adminAudit = (page = 1) =>
+  api.get("/admin/audit", { params: { page } });
+export const adminWithdrawals = (status?: string, page = 1) =>
+  api.get("/admin/withdrawals", { params: { status, page } });
+export const adminReviewWithdrawal = (
+  id: string,
+  status: string,
+  note?: string
+) => api.patch(`/admin/withdrawals/${id}`, { status, note });

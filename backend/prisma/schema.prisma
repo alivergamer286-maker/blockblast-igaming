@@ -13,14 +13,23 @@ model User {
   username      String         @unique
   passwordHash  String
   balance       Decimal        @default(1000) @db.Decimal(18, 2)
+  role          String         @default("user") // user | admin
+  status        String         @default("active") // active | banned | suspended
+  banReason     String?
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   sessions      GameSession[]
   transactions  Transaction[]
   scores        Score[]
+  auditLogs     AuditLog[]     @relation("AuditActor")
+  withdrawals   WithdrawalRequest[]
 
   @@index([email])
   @@index([username])
+  @@index([role])
+  @@index([status])
 }
 
 model GameSession {
@@ -91,4 +100,37 @@ model Score {
   @@index([score])
   @@index([createdAt])
   @@index([userId, score])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  action     String
+  targetType String?
+  targetId   String?
+  meta       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model WithdrawalRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  amount      Decimal  @db.Decimal(18, 2)
+  status      String   @default("pending") // pending | approved | rejected | paid
+  note        String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }

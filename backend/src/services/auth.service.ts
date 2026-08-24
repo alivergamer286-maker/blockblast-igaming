@@ -4,6 +4,24 @@ import { prisma } from "../utils/prisma";
 import { config } from "../config";
 import { AuthPayload } from "../middleware/auth";
 
+function publicUser(user: {
+  id: string;
+  email: string;
+  username: string;
+  balance: unknown;
+  role?: string;
+  status?: string;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    balance: Number(user.balance),
+    role: user.role || "user",
+    status: user.status || "active",
+  };
+}
+
 export async function register(
   email: string,
   username: string,
@@ -31,6 +49,8 @@ export async function register(
       username,
       passwordHash,
       balance: config.initialBalance,
+      role: "user",
+      status: "active",
     },
   });
 
@@ -50,15 +70,7 @@ export async function register(
     username: user.username,
   });
 
-  return {
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      balance: Number(user.balance),
-    },
-  };
+  return { token, user: publicUser(user) };
 }
 
 export async function login(emailOrUsername: string, password: string) {
@@ -77,25 +89,30 @@ export async function login(emailOrUsername: string, password: string) {
     throw new Error("Invalid credentials");
   }
 
+  if (user.status === "banned") {
+    throw new Error(user.banReason ? `Banned: ${user.banReason}` : "Account banned");
+  }
+
+  if (user.status === "suspended") {
+    throw new Error("Account suspended");
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
   const token = signToken({
     userId: user.id,
     email: user.email,
     username: user.username,
   });
 
-  return {
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      balance: Number(user.balance),
-    },
-  };
+  return { token, user: publicUser(user) };
 }
 
 function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days in seconds
+    expiresIn: 60 * 60 * 24 * 7,
   });
 }

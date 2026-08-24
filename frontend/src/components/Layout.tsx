@@ -32,17 +32,6 @@ export default function Layout() {
           >
             Ranking
           </NavLink>
-          {user?.role === "admin" && (
-            <NavLink
-              to="/admin"
-              style={({ isActive }) => ({
-                ...styles.link,
-                color: isActive ? "#e94560" : "#a0a0b0",
-              })}
-            >
-              Admin
-            </NavLink>
-          )}
         </nav>
         <div style={styles.userArea}>
           <div style={styles.balance}>

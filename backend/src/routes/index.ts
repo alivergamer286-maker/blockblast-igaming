@@ -7,12 +7,16 @@ import * as adminController from "../controllers/admin.controller";
 import { authMiddleware } from "../middleware/auth";
 import { activeUserMiddleware } from "../middleware/activeUser";
 import { adminMiddleware } from "../middleware/admin";
-import { authLimiter, gameLimiter } from "../middleware/rateLimit";
+import {
+  authLimiter,
+  gameLimiter,
+  adminLimiter,
+} from "../middleware/rateLimit";
 
 const router = Router();
 
 const authed = [authMiddleware, activeUserMiddleware];
-const admin = [authMiddleware, activeUserMiddleware, adminMiddleware];
+const admin = [authMiddleware, activeUserMiddleware, adminMiddleware, adminLimiter];
 
 router.post("/auth/register", authLimiter, authController.register);
 router.post("/auth/login", authLimiter, authController.login);
@@ -28,7 +32,6 @@ router.get("/leaderboard", leaderboardController.global);
 router.get("/leaderboard/daily", leaderboardController.daily);
 router.get("/history", ...authed, leaderboardController.history);
 
-// Admin
 router.get("/admin/stats", ...admin, adminController.stats);
 router.get("/admin/users", ...admin, adminController.users);
 router.patch("/admin/users/:id/status", ...admin, adminController.setStatus);

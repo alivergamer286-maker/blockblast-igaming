@@ -10,12 +10,24 @@ export const globalLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { error: "Too many auth attempts" },
 });
 
 export const gameLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 90,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { error: "Game action rate limit exceeded" },
+});
+
+export const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Admin rate limit exceeded" },
 });

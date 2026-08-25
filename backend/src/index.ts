@@ -8,21 +8,26 @@ import { connectRedis } from "./utils/redis";
 
 const app = express();
 
-console.log("[boot] process starting");
-console.log("[boot] NODE_ENV=", process.env.NODE_ENV);
-console.log("[boot] PORT env=", process.env.PORT);
-console.log("[boot] config.port=", config.port);
-console.log("[boot] DATABASE_URL set=", Boolean(process.env.DATABASE_URL));
-console.log("[boot] JWT_SECRET set=", Boolean(process.env.JWT_SECRET));
+// Trust proxy (Railway / reverse proxy) for rate-limit IP and secure cookies later
+app.set("trust proxy", 1);
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: config.isProd ? undefined : false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+
 app.use(
   cors({
     origin: config.corsOrigin,
     credentials: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Idempotency-Key"],
   })
 );
-app.use(express.json({ limit: "100kb" }));
+
+app.use(express.json({ limit: "64kb" }));
 app.use(globalLimiter);
 
 app.get("/", (_req, res) => {
@@ -30,7 +35,7 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", env: config.nodeEnv });
 });
 
 app.use("/api", routes);
@@ -48,21 +53,20 @@ app.use(
 );
 
 async function main() {
-  console.log("[boot] main() entered");
+  if (config.isProd) {
+    console.log("[boot] production mode — JWT and DATABASE_URL validated at config load");
+  }
 
   try {
-    console.log("[boot] connecting redis (optional)...");
     await connectRedis();
-    console.log("[boot] redis step done");
   } catch (err) {
     console.warn("[Redis] skipped:", (err as Error).message);
   }
 
   const port = Number(process.env.PORT) || config.port || 3000;
-  console.log("[boot] about to listen on 0.0.0.0:" + port);
 
   const server = app.listen(port, "0.0.0.0", () => {
-    console.log("[Server] listening on 0.0.0.0:" + port);
+    console.log(`[Server] listening on 0.0.0.0:${port}`);
   });
 
   server.on("error", (err) => {

@@ -20,6 +20,9 @@ const admin = [authMiddleware, activeUserMiddleware, adminMiddleware, adminLimit
 
 router.post("/auth/register", authLimiter, authController.register);
 router.post("/auth/login", authLimiter, authController.login);
+router.get("/auth/verify-email", authLimiter, authController.verifyEmail);
+router.post("/auth/verify-email", authLimiter, authController.verifyEmail);
+router.post("/auth/resend-verification", ...authed, authLimiter, authController.resendVerify);
 
 router.get("/wallet", ...authed, walletController.getBalance);
 router.get("/wallet/transactions", ...authed, walletController.getTransactions);

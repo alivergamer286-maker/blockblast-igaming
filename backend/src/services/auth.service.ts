@@ -3,6 +3,11 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../utils/prisma";
 import { config } from "../config";
 import { AuthPayload } from "../middleware/auth";
+import {
+  issueVerifyToken,
+  sendVerificationEmail,
+  verifyEmailToken,
+} from "./email.service";
 
 function publicUser(user: {
   id: string;
@@ -11,6 +16,7 @@ function publicUser(user: {
   balance: unknown;
   role?: string;
   status?: string;
+  emailVerified?: boolean;
 }) {
   return {
     id: user.id,
@@ -19,6 +25,7 @@ function publicUser(user: {
     balance: Number(user.balance),
     role: user.role || "user",
     status: user.status || "active",
+    emailVerified: Boolean(user.emailVerified),
   };
 }
 
@@ -29,7 +36,7 @@ export async function register(
 ) {
   const existing = await prisma.user.findFirst({
     where: {
-      OR: [{ email }, { username }],
+      OR: [{ email: email.toLowerCase().trim() }, { username: username.trim() }],
     },
   });
 
@@ -51,6 +58,7 @@ export async function register(
       balance: config.initialBalance,
       role: "user",
       status: "active",
+      emailVerified: false,
     },
   });
 
@@ -65,23 +73,31 @@ export async function register(
     },
   });
 
+  const verifyToken = await issueVerifyToken(user.id);
+  try {
+    await sendVerificationEmail(user.email, verifyToken);
+  } catch (err) {
+    console.error("[auth] verify email send failed:", (err as Error).message);
+  }
+
   const token = signToken({
     userId: user.id,
     email: user.email,
     username: user.username,
   });
 
-  return { token, user: publicUser(user) };
+  return {
+    token,
+    user: publicUser(user),
+    message: "Account created. Please verify your email.",
+  };
 }
 
 export async function login(emailOrUsername: string, password: string) {
   const key = emailOrUsername.trim();
   const user = await prisma.user.findFirst({
     where: {
-      OR: [
-        { email: key.toLowerCase() },
-        { username: key },
-      ],
+      OR: [{ email: key.toLowerCase() }, { username: key }],
     },
   });
 
@@ -104,6 +120,7 @@ export async function login(emailOrUsername: string, password: string) {
     throw new Error("Account suspended");
   }
 
+  // Soft gate: allow login but flag unverified (game routes can harden later)
   await prisma.user.update({
     where: { id: user.id },
     data: { lastLoginAt: new Date() },
@@ -115,7 +132,25 @@ export async function login(emailOrUsername: string, password: string) {
     username: user.username,
   });
 
-  return { token, user: publicUser(user) };
+  return {
+    token,
+    user: publicUser(user),
+    emailVerified: user.emailVerified,
+  };
+}
+
+export async function resendVerification(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  if (user.emailVerified) throw new Error("Email already verified");
+
+  const token = await issueVerifyToken(user.id);
+  await sendVerificationEmail(user.email, token);
+  return { message: "Verification email sent" };
+}
+
+export async function confirmEmail(token: string) {
+  return verifyEmailToken(token);
 }
 
 function signToken(payload: AuthPayload): string {

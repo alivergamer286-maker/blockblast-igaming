@@ -6,6 +6,7 @@ import RegisterPage from "./pages/RegisterPage";
 import GamePage from "./pages/GamePage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import AdminPage from "./pages/AdminPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
 import Layout from "./components/Layout";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route
         path="/"
         element={

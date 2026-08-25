@@ -37,16 +37,16 @@ export async function register(
     throw new Error("Email or username already taken");
   }
 
-  if (password.length < 6) {
-    throw new Error("Password must be at least 6 characters");
+  if (password.length < 8) {
+    throw new Error("Password must be at least 8 characters");
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
     data: {
-      email,
-      username,
+      email: email.toLowerCase().trim(),
+      username: username.trim(),
       passwordHash,
       balance: config.initialBalance,
       role: "user",
@@ -61,6 +61,7 @@ export async function register(
       amount: config.initialBalance,
       balanceAfter: config.initialBalance,
       description: "Welcome bonus",
+      reference: `welcome:${user.id}`,
     },
   });
 
@@ -74,9 +75,13 @@ export async function register(
 }
 
 export async function login(emailOrUsername: string, password: string) {
+  const key = emailOrUsername.trim();
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ email: emailOrUsername }, { username: emailOrUsername }],
+      OR: [
+        { email: key.toLowerCase() },
+        { username: key },
+      ],
     },
   });
 
@@ -90,7 +95,9 @@ export async function login(emailOrUsername: string, password: string) {
   }
 
   if (user.status === "banned") {
-    throw new Error(user.banReason ? `Banned: ${user.banReason}` : "Account banned");
+    throw new Error(
+      user.banReason ? `Banned: ${user.banReason}` : "Account banned"
+    );
   }
 
   if (user.status === "suspended") {
@@ -113,6 +120,6 @@ export async function login(emailOrUsername: string, password: string) {
 
 function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: 60 * 60 * 24 * 7,
+    expiresIn: config.jwt.expiresInSec,
   });
 }

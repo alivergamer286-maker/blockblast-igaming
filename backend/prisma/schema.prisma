@@ -8,28 +8,45 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  username      String         @unique
-  passwordHash  String
-  balance       Decimal        @default(1000) @db.Decimal(18, 2)
-  role          String         @default("user") // user | admin
-  status        String         @default("active") // active | banned | suspended
-  banReason     String?
-  lastLoginAt   DateTime?
-  lastLoginIp   String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  sessions      GameSession[]
-  transactions  Transaction[]
-  scores        Score[]
-  auditLogs     AuditLog[]     @relation("AuditActor")
-  withdrawals   WithdrawalRequest[]
+  id              String         @id @default(uuid())
+  email           String         @unique
+  username        String         @unique
+  passwordHash    String
+  balance         Decimal        @default(1000) @db.Decimal(18, 2)
+  role            String         @default("user")
+  status          String         @default("active")
+  banReason       String?
+  emailVerified   Boolean        @default(false)
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  sessions        GameSession[]
+  transactions    Transaction[]
+  scores          Score[]
+  auditLogs       AuditLog[]     @relation("AuditActor")
+  withdrawals     WithdrawalRequest[]
+  emailTokens     EmailToken[]
 
   @@index([email])
   @@index([username])
   @@index([role])
   @@index([status])
+}
+
+model EmailToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  type      String   @default("verify") // verify | reset
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
 }
 
 model GameSession {
@@ -123,7 +140,7 @@ model WithdrawalRequest {
   userId      String
   user        User     @relation(fields: [userId], references: [id])
   amount      Decimal  @db.Decimal(18, 2)
-  status      String   @default("pending") // pending | approved | rejected | paid
+  status      String   @default("pending")
   note        String?
   reviewedBy  String?
   reviewedAt  DateTime?

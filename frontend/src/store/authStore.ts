@@ -18,9 +18,25 @@ interface AuthState {
   hydrate: () => void;
 }
 
+const getInitialAuthState = (): { user: User | null; token: string | null } => {
+  const token = localStorage.getItem("token");
+  const userStr = localStorage.getItem("user");
+
+  if (token && userStr) {
+    try {
+      const user = JSON.parse(userStr);
+      return { user, token };
+    } catch {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+    }
+  }
+
+  return { user: null, token: null };
+};
+
 export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  token: null,
+  ...getInitialAuthState(),
   setAuth: (user, token) => {
     localStorage.setItem("token", token);
     localStorage.setItem("user", JSON.stringify(user));

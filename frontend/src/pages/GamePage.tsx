@@ -19,22 +19,42 @@ export default function GamePage() {
   } = useGameStore();
 
   const setBalance = useAuthStore((s) => s.setBalance);
+  const balance = useAuthStore((s) => s.user?.balance ?? 0);
   const [loading, setLoading] = useState(false);
-  const [betAmount, setBetAmount] = useState(0);
+  const [betAmount, setBetAmount] = useState(10);
+  const [customBet, setCustomBet] = useState("");
   const [error, setError] = useState("");
   const [lastPoints, setLastPoints] = useState<number | null>(null);
+  const [potentialWin, setPotentialWin] = useState(0);
+  const [sessionBet, setSessionBet] = useState(0);
+  const [cashoutResult, setCashoutResult] = useState<{
+    payout: number;
+    profit: number;
+  } | null>(null);
+
+  function resolvedBet() {
+    if (customBet.trim() !== "") {
+      const n = Number(customBet.replace(",", "."));
+      return Number.isFinite(n) ? n : betAmount;
+    }
+    return betAmount;
+  }
 
   async function handleStart() {
     setLoading(true);
     setError("");
+    setCashoutResult(null);
     try {
-      const { data } = await startGame(betAmount);
+      const bet = resolvedBet();
+      const { data } = await startGame(bet);
       setSession({
         sessionId: data.sessionId,
         board: data.board,
         pieces: data.pieces,
         score: data.score,
       });
+      setSessionBet(data.betAmount ?? bet);
+      setPotentialWin(data.potentialWin ?? 0);
       if (data.balance !== undefined) {
         setBalance(data.balance);
       } else {
@@ -64,11 +84,18 @@ export default function GamePage() {
         clearedCols: data.clearedCols,
       });
       setLastPoints(data.pointsEarned);
+      setPotentialWin(data.potentialWin ?? 0);
       setTimeout(() => setLastPoints(null), 800);
 
-      if (data.isGameOver && data.payout !== undefined) {
+      if (data.isGameOver) {
         const bal = await getBalance();
         setBalance(bal.data.balance);
+        if (data.payout !== undefined) {
+          setCashoutResult({
+            payout: data.payout,
+            profit: Math.round((data.payout - sessionBet) * 100) / 100,
+          });
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.error || "Jogada inválida");
@@ -78,7 +105,11 @@ export default function GamePage() {
   async function handleEnd() {
     if (!sessionId) return;
     try {
-      await endGame(sessionId);
+      const { data } = await endGame(sessionId);
+      setCashoutResult({
+        payout: data.payout ?? 0,
+        profit: data.profit ?? 0,
+      });
       const bal = await getBalance();
       setBalance(bal.data.balance);
     } catch {
@@ -93,28 +124,44 @@ export default function GamePage() {
         <h2 className="pixel" style={{ fontSize: 18, marginBottom: 8 }}>
           Nova Partida
         </h2>
-        <p style={{ color: "#a0a0b0", marginBottom: 24, fontSize: 14 }}>
-          Grid 8×8 · 3 peças por turno · Sem rotação
+        <p style={{ color: "#a0a0b0", marginBottom: 8, fontSize: 14 }}>
+          Escolha o valor da aposta · saldo R$ {balance.toFixed(2)}
         </p>
 
         <div style={styles.betBox}>
-          <label style={{ fontSize: 13, color: "#a0a0b0" }}>
-            Aposta (opcional)
-          </label>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            {[0, 5, 10, 25, 50].map((v) => (
+          <label style={{ fontSize: 13, color: "#a0a0b0" }}>Aposta rápida</label>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            {[1, 5, 10, 25, 50, 100].map((v) => (
               <button
                 key={v}
                 style={{
                   ...styles.betBtn,
-                  background: betAmount === v ? "#e94560" : "#2a2a40",
+                  background: betAmount === v && !customBet ? "#e94560" : "#2a2a40",
                 }}
-                onClick={() => setBetAmount(v)}
+                onClick={() => {
+                  setBetAmount(v);
+                  setCustomBet("");
+                }}
               >
-                {v === 0 ? "Free" : `R$${v}`}
+                R${v}
               </button>
             ))}
           </div>
+          <label style={{ fontSize: 13, color: "#a0a0b0", display: "block", marginTop: 16 }}>
+            Ou valor livre
+          </label>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="Ex: 15.50"
+            value={customBet}
+            onChange={(e) => setCustomBet(e.target.value)}
+            style={styles.input}
+          />
+          <p style={{ color: "#888", fontSize: 12, marginTop: 8 }}>
+            Aposta atual: <strong>R$ {resolvedBet().toFixed(2)}</strong>
+          </p>
         </div>
 
         {error && <p style={{ color: "#e74c3c", marginBottom: 12 }}>{error}</p>}
@@ -122,6 +169,13 @@ export default function GamePage() {
         <button style={styles.startBtn} onClick={handleStart} disabled={loading}>
           {loading ? "Carregando..." : "Jogar"}
         </button>
+
+        {cashoutResult && (
+          <p style={{ marginTop: 16, color: "#2ecc71", fontSize: 14 }}>
+            Último resultado: payout R$ {cashoutResult.payout.toFixed(2)}{" "}
+            (lucro R$ {cashoutResult.profit.toFixed(2)})
+          </p>
+        )}
       </div>
     );
   }
@@ -137,14 +191,25 @@ export default function GamePage() {
           )}
         </div>
         <div style={styles.stat}>
-          <span style={styles.statLabel}>Combo</span>
-          <span style={{ ...styles.statValue, color: combo > 0 ? "#f1c40f" : "#eaeaea" }}>
-            {combo}x
+          <span style={styles.statLabel}>Aposta</span>
+          <span style={styles.statValue}>R$ {sessionBet.toFixed(2)}</span>
+        </div>
+        <div style={styles.stat}>
+          <span style={styles.statLabel}>Ganho atual</span>
+          <span style={{ ...styles.statValue, color: "#2ecc71" }}>
+            R$ {potentialWin.toFixed(2)}
           </span>
         </div>
         <div style={styles.stat}>
-          <span style={styles.statLabel}>Max</span>
-          <span style={styles.statValue}>{maxCombo}x</span>
+          <span style={styles.statLabel}>Combo</span>
+          <span
+            style={{
+              ...styles.statValue,
+              color: combo > 0 ? "#f1c40f" : "#eaeaea",
+            }}
+          >
+            {combo}x
+          </span>
         </div>
       </div>
 
@@ -164,19 +229,22 @@ export default function GamePage() {
             <p style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>
               {score.toLocaleString()}
             </p>
+            <p style={{ color: "#2ecc71", marginBottom: 8 }}>
+              Payout R$ {(cashoutResult?.payout ?? potentialWin).toFixed(2)}
+            </p>
             <p style={{ color: "#a0a0b0", marginBottom: 20, fontSize: 13 }}>
               Max Combo: {maxCombo}x
             </p>
             <button style={styles.startBtn} onClick={handleEnd}>
-              Jogar de novo
+              Continuar
             </button>
           </div>
         </div>
       )}
 
       {!isGameOver && (
-        <button style={styles.quitBtn} onClick={handleEnd}>
-          Desistir
+        <button style={styles.cashoutBtn} onClick={handleEnd}>
+          Encerrar e sacar R$ {potentialWin.toFixed(2)}
         </button>
       )}
     </div>
@@ -192,17 +260,27 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: 24,
   },
-  betBox: {
-    width: "100%",
-    marginBottom: 24,
-  },
+  betBox: { width: "100%", marginBottom: 24 },
   betBtn: {
-    flex: 1,
+    flex: "1 1 60px",
     padding: "10px 0",
     borderRadius: 8,
     color: "#fff",
     fontWeight: 600,
     fontSize: 13,
+    border: "none",
+    cursor: "pointer",
+  },
+  input: {
+    width: "100%",
+    marginTop: 8,
+    padding: "12px 14px",
+    borderRadius: 8,
+    border: "1px solid #2a2a40",
+    background: "#12121c",
+    color: "#fff",
+    fontSize: 16,
+    boxSizing: "border-box",
   },
   startBtn: {
     background: "linear-gradient(135deg, #e94560, #c23152)",
@@ -212,6 +290,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: 16,
     boxShadow: "0 4px 20px rgba(233,69,96,0.4)",
+    border: "none",
+    cursor: "pointer",
   },
   game: {
     display: "flex",
@@ -222,14 +302,13 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
   },
   hud: {
-    display: "flex",
-    justifyContent: "space-between",
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
     width: "100%",
     marginBottom: 16,
-    gap: 12,
+    gap: 10,
   },
   stat: {
-    flex: 1,
     background: "#1a1a2e",
     borderRadius: 10,
     padding: "10px 12px",
@@ -242,10 +321,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#a0a0b0",
     marginBottom: 2,
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 700,
-  },
+  statValue: { fontSize: 16, fontWeight: 700 },
   pointsPop: {
     position: "absolute",
     top: -8,
@@ -253,7 +329,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#2ecc71",
     fontWeight: 700,
     fontSize: 14,
-    animation: "fadeUp 0.8s ease forwards",
   },
   overlay: {
     position: "absolute",
@@ -272,11 +347,15 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     border: "1px solid #2a2a40",
   },
-  quitBtn: {
+  cashoutBtn: {
     marginTop: 16,
-    background: "transparent",
-    color: "#a0a0b0",
-    fontSize: 13,
-    textDecoration: "underline",
+    background: "#2ecc71",
+    color: "#0f0f1a",
+    fontWeight: 700,
+    border: "none",
+    borderRadius: 10,
+    padding: "12px 20px",
+    cursor: "pointer",
+    fontSize: 14,
   },
 };

@@ -25,8 +25,12 @@ api.interceptors.response.use(
   }
 );
 
-export const register = (email: string, username: string, password: string) =>
-  api.post("/auth/register", { email, username, password });
+export const register = (
+  email: string,
+  username: string,
+  password: string,
+  referralCode?: string
+) => api.post("/auth/register", { email, username, password, referralCode });
 
 export const login = (emailOrUsername: string, password: string) =>
   api.post("/auth/login", { emailOrUsername, password });
@@ -51,7 +55,6 @@ export const getLeaderboard = () => api.get("/leaderboard");
 export const getDailyLeaderboard = () => api.get("/leaderboard/daily");
 export const getHistory = () => api.get("/history");
 
-// Admin
 export const adminStats = () => api.get("/admin/stats");
 export const adminUsers = (page = 1, search = "") =>
   api.get("/admin/users", { params: { page, search: search || undefined } });
@@ -74,3 +77,16 @@ export const adminReviewWithdrawal = (
   status: string,
   note?: string
 ) => api.patch(`/admin/withdrawals/${id}`, { status, note });
+export const adminAffiliates = (page = 1) =>
+  api.get("/admin/affiliates", { params: { page } });
+export const adminCreateAffiliate = (body: {
+  emailOrUsername?: string;
+  userId?: string;
+  commissionRate?: number;
+  notes?: string;
+}) => api.post("/admin/affiliates", body);
+export const adminAffiliateDetail = (userId: string) =>
+  api.get(`/admin/affiliates/${userId}`);
+export const adminGetConfig = () => api.get("/admin/config");
+export const adminUpdateConfig = (body: Record<string, number>) =>
+  api.patch("/admin/config", body);

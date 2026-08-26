@@ -42,6 +42,11 @@ router.post("/admin/users/:id/balance", ...admin, adminController.adjustBalance)
 router.get("/admin/audit", ...admin, adminController.audit);
 router.get("/admin/withdrawals", ...admin, adminController.withdrawals);
 router.patch("/admin/withdrawals/:id", ...admin, adminController.reviewWithdrawal);
+router.get("/admin/affiliates", ...admin, adminController.affiliates);
+router.post("/admin/affiliates", ...admin, adminController.createAffiliate);
+router.get("/admin/affiliates/:userId", ...admin, adminController.affiliateDetail);
+router.get("/admin/config", ...admin, adminController.getConfig);
+router.patch("/admin/config", ...admin, adminController.updateConfig);
 
 router.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

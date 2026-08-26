@@ -29,6 +29,8 @@ export async function listUsers(page = 1, limit = 20, search?: string) {
         banReason: true,
         lastLoginAt: true,
         createdAt: true,
+        referredById: true,
+        emailVerified: true,
       },
     }),
     prisma.user.count({ where }),
@@ -148,21 +150,42 @@ export async function adjustBalance(
 }
 
 export async function dashboardStats() {
-  const [users, activeSessions, totalBets, pendingWithdrawals] = await Promise.all([
+  const [
+    users,
+    activeSessions,
+    totalBets,
+    totalWins,
+    pendingWithdrawals,
+    affiliates,
+    totalBalance,
+  ] = await Promise.all([
     prisma.user.count(),
     prisma.gameSession.count({ where: { status: "active" } }),
     prisma.transaction.aggregate({
       where: { type: "bet" },
       _sum: { amount: true },
     }),
+    prisma.transaction.aggregate({
+      where: { type: { in: ["win", "cashout"] } },
+      _sum: { amount: true },
+    }),
     prisma.withdrawalRequest.count({ where: { status: "pending" } }),
+    prisma.affiliateProfile.count({ where: { active: true } }),
+    prisma.user.aggregate({ _sum: { balance: true } }),
   ]);
+
+  const betVol = Math.abs(Number(totalBets._sum.amount || 0));
+  const winVol = Math.abs(Number(totalWins._sum.amount || 0));
 
   return {
     users,
     activeSessions,
-    totalBetVolume: Math.abs(Number(totalBets._sum.amount || 0)),
+    totalBetVolume: betVol,
+    totalWinVolume: winVol,
+    houseProfit: Math.round((betVol - winVol) * 100) / 100,
     pendingWithdrawals,
+    activeAffiliates: affiliates,
+    totalPlayerBalance: Number(totalBalance._sum.balance || 0),
   };
 }
 
@@ -215,10 +238,7 @@ export async function reviewWithdrawal(
   const current = await prisma.withdrawalRequest.findUnique({ where: { id } });
   if (!current) throw new Error("Withdrawal not found");
 
-  // prevent double-pay / illegal transitions
-  if (current.status === "paid") {
-    throw new Error("Already paid");
-  }
+  if (current.status === "paid") throw new Error("Already paid");
   if (current.status === "rejected" && status !== "rejected") {
     throw new Error("Cannot change rejected withdrawal");
   }

@@ -7,7 +7,8 @@ import {
 } from "../game/engine";
 import { Piece } from "../game/pieces";
 import { debit, credit } from "./wallet.service";
-import { config } from "../config";
+import { getPlatformSettings, calcPayout } from "./platform.service";
+import { recordAffiliateWager } from "./affiliate.service";
 
 function asBoard(value: unknown): Board {
   return value as Board;
@@ -17,9 +18,20 @@ function asPieces(value: unknown): Piece[] {
   return value as Piece[];
 }
 
+function round2(n: number) {
+  return Math.floor(n * 100) / 100;
+}
+
 export async function startSession(userId: string, betAmount: number = 0) {
-  if (betAmount < 0 || betAmount > config.maxBet) {
-    throw new Error(`Bet must be between 0 and ${config.maxBet}`);
+  const settings = await getPlatformSettings();
+  const bet = round2(Number(betAmount) || 0);
+
+  if (bet < 0) throw new Error("Bet cannot be negative");
+  if (bet > 0 && bet < settings.minBet) {
+    throw new Error(`Minimum bet is ${settings.minBet}`);
+  }
+  if (bet > settings.maxBet) {
+    throw new Error(`Maximum bet is ${settings.maxBet}`);
   }
 
   await prisma.gameSession.updateMany({
@@ -27,8 +39,9 @@ export async function startSession(userId: string, betAmount: number = 0) {
     data: { status: "abandoned", endedAt: new Date() },
   });
 
-  if (betAmount > 0) {
-    await debit(userId, betAmount, "bet", undefined, "Game bet");
+  if (bet > 0) {
+    await debit(userId, bet, "bet", `bet:${userId}:${Date.now()}`, "Game bet");
+    await recordAffiliateWager(userId, bet);
   }
 
   const state = createInitialState();
@@ -44,7 +57,8 @@ export async function startSession(userId: string, betAmount: number = 0) {
       boardState: state.board as object,
       currentPieces: state.pieces as object,
       pieceIndex: 0,
-      betAmount,
+      betAmount: bet,
+      potentialWin: 0,
     },
   });
 
@@ -53,6 +67,15 @@ export async function startSession(userId: string, betAmount: number = 0) {
     board: state.board,
     pieces: state.pieces,
     score: 0,
+    betAmount: bet,
+    potentialWin: 0,
+    settings: {
+      minBet: settings.minBet,
+      maxBet: settings.maxBet,
+      pointsPerUnit: settings.pointsPerUnit,
+      maxMultiplier: settings.maxMultiplier,
+      houseEdge: settings.houseEdge,
+    },
   };
 }
 
@@ -66,11 +89,12 @@ export async function placePiece(
   const session = await prisma.gameSession.findFirst({
     where: { id: sessionId, userId, status: "active" },
   });
-
   if (!session) throw new Error("Active session not found");
 
+  const settings = await getPlatformSettings();
   const board = asBoard(session.boardState);
   const pieces = asPieces(session.currentPieces);
+  const bet = Number(session.betAmount);
 
   const state: GameState = {
     board,
@@ -89,6 +113,7 @@ export async function placePiece(
   const newLines = session.linesCleared + result.linesCleared;
   const newCombo = result.linesCleared > 0 ? session.combos + 1 : 0;
   const newMaxCombo = Math.max(session.maxCombo, newCombo);
+  const potentialWin = calcPayout(bet, newScore, settings);
 
   let remainingPieces = pieces.filter((_, i) => i !== pieceIndex);
   if (result.newPieces) remainingPieces = result.newPieces;
@@ -106,39 +131,31 @@ export async function placePiece(
     },
   });
 
-  const updateData: {
-    boardState: object;
-    currentPieces: object;
-    score: number;
-    linesCleared: number;
-    combos: number;
-    maxCombo: number;
-    status?: string;
-    endedAt?: Date;
-    payout?: number;
-  } = {
+  const updateData: Record<string, unknown> = {
     boardState: result.board as object,
     currentPieces: remainingPieces as object,
     score: newScore,
     linesCleared: newLines,
     combos: newCombo,
     maxCombo: newMaxCombo,
+    potentialWin,
   };
 
+  let payout = 0;
   if (result.isGameOver) {
     updateData.status = "finished";
     updateData.endedAt = new Date();
-
-    const bet = Number(session.betAmount);
-    if (bet > 0) {
-      const multiplier = Math.min(newScore / 5000, 10);
-      const payout = Math.floor(bet * multiplier * 100) / 100;
-      updateData.payout = payout;
-      if (payout > 0) {
-        await credit(userId, payout, "win", sessionId, `Win - score ${newScore}`);
-      }
+    payout = potentialWin;
+    updateData.payout = payout;
+    if (payout > 0) {
+      await credit(
+        userId,
+        payout,
+        "win",
+        `win:${sessionId}`,
+        `Win score ${newScore}`
+      );
     }
-
     await prisma.score.create({
       data: {
         userId,
@@ -162,20 +179,42 @@ export async function placePiece(
     isGameOver: result.isGameOver,
     clearedRows: result.clearedRows,
     clearedCols: result.clearedCols,
-    payout: result.isGameOver ? Number(updateData.payout || 0) : undefined,
+    betAmount: bet,
+    potentialWin,
+    payout: result.isGameOver ? payout : undefined,
   };
 }
 
+/** Cashout / desistir: credita o potentialWin atual e encerra a sessão */
 export async function endSession(userId: string, sessionId: string) {
   const session = await prisma.gameSession.findFirst({
     where: { id: sessionId, userId, status: "active" },
   });
   if (!session) throw new Error("Active session not found");
 
+  const settings = await getPlatformSettings();
+  const bet = Number(session.betAmount);
+  const payout = calcPayout(bet, session.score, settings);
+
   await prisma.gameSession.update({
     where: { id: sessionId },
-    data: { status: "finished", endedAt: new Date() },
+    data: {
+      status: "cashed_out",
+      endedAt: new Date(),
+      payout,
+      potentialWin: payout,
+    },
   });
+
+  if (payout > 0) {
+    await credit(
+      userId,
+      payout,
+      "cashout",
+      `cashout:${sessionId}`,
+      `Cashout score ${session.score}`
+    );
+  }
 
   await prisma.score.create({
     data: {
@@ -186,7 +225,12 @@ export async function endSession(userId: string, sessionId: string) {
     },
   });
 
-  return { score: session.score };
+  return {
+    score: session.score,
+    betAmount: bet,
+    payout,
+    profit: round2(payout - bet),
+  };
 }
 
 export async function getSession(userId: string, sessionId: string) {

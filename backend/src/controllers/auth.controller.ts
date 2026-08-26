@@ -6,6 +6,7 @@ const registerSchema = z.object({
   email: z.string().email(),
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   password: z.string().min(8).max(100),
+  referralCode: z.string().max(32).optional(),
 });
 
 const loginSchema = z.object({
@@ -19,7 +20,8 @@ export async function register(req: Request, res: Response) {
     const result = await authService.register(
       data.email,
       data.username,
-      data.password
+      data.password,
+      data.referralCode
     );
     res.status(201).json(result);
   } catch (err: any) {

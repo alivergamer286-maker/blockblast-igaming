@@ -8,6 +8,7 @@ import {
   sendVerificationEmail,
   verifyEmailToken,
 } from "./email.service";
+import { attachReferral } from "./affiliate.service";
 
 function publicUser(user: {
   id: string;
@@ -32,7 +33,8 @@ function publicUser(user: {
 export async function register(
   email: string,
   username: string,
-  password: string
+  password: string,
+  referralCode?: string
 ) {
   const existing = await prisma.user.findFirst({
     where: {
@@ -72,6 +74,14 @@ export async function register(
       reference: `welcome:${user.id}`,
     },
   });
+
+  if (referralCode && referralCode.trim()) {
+    try {
+      await attachReferral(user.id, referralCode.trim());
+    } catch (err) {
+      console.warn("[auth] referral attach failed:", (err as Error).message);
+    }
+  }
 
   const verifyToken = await issueVerifyToken(user.id);
   try {
@@ -120,7 +130,6 @@ export async function login(emailOrUsername: string, password: string) {
     throw new Error("Account suspended");
   }
 
-  // Soft gate: allow login but flag unverified (game routes can harden later)
   await prisma.user.update({
     where: { id: user.id },
     data: { lastLoginAt: new Date() },

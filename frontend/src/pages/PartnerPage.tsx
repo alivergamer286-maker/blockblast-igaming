@@ -1,20 +1,16 @@
 import { useEffect, useState } from "react";
-import { useAuthStore } from "../store/authStore";
-import { adminAffiliateDetail } from "../services/api";
+import { api } from "../services/api";
 
 export default function PartnerPage() {
-  const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!user?.id) return;
-    adminAffiliateDetail(user.id)
+    api
+      .get("/partner/me")
       .then((r) => setData(r.data))
-      .catch((e) =>
-        setError(e.response?.data?.error || "Perfil de afiliado indisponível")
-      );
-  }, [user?.id]);
+      .catch(() => setError("Perfil de afiliado indisponível"));
+  }, []);
 
   return (
     <div style={{ width: "100%", maxWidth: 720 }}>
@@ -30,9 +26,7 @@ export default function PartnerPage() {
             {(Number(data.profile?.commissionRate || 0) * 100).toFixed(1)}%
           </p>
           <p>Indicados: {data.profile?.totalReferrals}</p>
-          <p>
-            Volume: R$ {Number(data.profile?.totalWagered || 0).toFixed(2)}
-          </p>
+          <p>Volume: R$ {Number(data.profile?.totalWagered || 0).toFixed(2)}</p>
           <h3 style={{ marginTop: 24 }}>Indicados</h3>
           <ul style={{ listStyle: "none", padding: 0 }}>
             {(data.referrals || []).map((r: any) => (

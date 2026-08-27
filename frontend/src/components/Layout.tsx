@@ -5,6 +5,8 @@ export default function Layout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const isAdmin = user?.role === "admin";
+  const isAffiliate = user?.role === "affiliate";
 
   return (
     <div style={styles.wrapper}>
@@ -32,6 +34,28 @@ export default function Layout() {
           >
             Ranking
           </NavLink>
+          {isAdmin && (
+            <NavLink
+              to="/ops"
+              style={({ isActive }) => ({
+                ...styles.link,
+                color: isActive ? "#e94560" : "#a0a0b0",
+              })}
+            >
+              Painel
+            </NavLink>
+          )}
+          {isAffiliate && !isAdmin && (
+            <NavLink
+              to="/partner"
+              style={({ isActive }) => ({
+                ...styles.link,
+                color: isActive ? "#e94560" : "#a0a0b0",
+              })}
+            >
+              Afiliado
+            </NavLink>
+          )}
         </nav>
         <div style={styles.userArea}>
           <div style={styles.balance}>
@@ -60,11 +84,7 @@ export default function Layout() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-  },
+  wrapper: { minHeight: "100vh", display: "flex", flexDirection: "column" },
   header: {
     display: "flex",
     alignItems: "center",
@@ -75,36 +95,22 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
     gap: 12,
   },
-  logo: {
-    fontSize: 14,
-    letterSpacing: 1,
-  },
-  nav: {
-    display: "flex",
-    gap: 24,
-  },
+  logo: { fontSize: 14, letterSpacing: 1 },
+  nav: { display: "flex", gap: 24 },
   link: {
     textDecoration: "none",
     fontWeight: 600,
     fontSize: 14,
     transition: "color 0.15s",
   },
-  userArea: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-  },
+  userArea: { display: "flex", alignItems: "center", gap: 16 },
   balance: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
     fontSize: 14,
   },
-  username: {
-    color: "#eaeaea",
-    fontWeight: 600,
-    fontSize: 14,
-  },
+  username: { color: "#eaeaea", fontWeight: 600, fontSize: 14 },
   logoutBtn: {
     background: "transparent",
     border: "1px solid #e94560",

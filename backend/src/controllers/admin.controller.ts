@@ -14,7 +14,7 @@ export async function stats(_req: Request, res: Response) {
   try {
     res.json(await adminService.dashboardStats());
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Error" });
   }
 }
 
@@ -25,7 +25,7 @@ export async function users(req: Request, res: Response) {
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
     res.json(await adminService.listUsers(page, limit, search));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Error" });
   }
 }
 
@@ -76,7 +76,7 @@ export async function audit(req: Request, res: Response) {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     res.json(await adminService.listAudit(page, limit));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Error" });
   }
 }
 
@@ -87,7 +87,7 @@ export async function withdrawals(req: Request, res: Response) {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     res.json(await adminService.listWithdrawals(status, page, limit));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Error" });
   }
 }
 
@@ -117,7 +117,7 @@ export async function affiliates(req: Request, res: Response) {
     const page = Math.max(1, Number(req.query.page) || 1);
     res.json(await affiliateService.listAffiliates(page, 20));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Error" });
   }
 }
 
@@ -150,7 +150,7 @@ export async function getConfig(_req: Request, res: Response) {
   try {
     res.json(await platformService.getPlatformSettings());
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Error" });
   }
 }
 
@@ -162,6 +162,7 @@ export async function updateConfig(req: Request, res: Response) {
       maxMultiplier: z.number().min(1).max(100).optional(),
       minBet: z.number().min(0).optional(),
       maxBet: z.number().min(0).optional(),
+      returnCap: z.number().min(0).max(100).optional(),
     });
     const body = schema.parse(req.body);
     res.json(await platformService.updatePlatformSettings(body));

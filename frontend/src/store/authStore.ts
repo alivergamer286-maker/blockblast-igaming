@@ -7,6 +7,7 @@ interface User {
   balance: number;
   role?: string;
   status?: string;
+  emailVerified?: boolean;
 }
 
 interface AuthState {
@@ -14,6 +15,7 @@ interface AuthState {
   token: string | null;
   setAuth: (user: User, token: string) => void;
   setBalance: (balance: number) => void;
+  setEmailVerified: (v: boolean) => void;
   logout: () => void;
   hydrate: () => void;
 }
@@ -21,17 +23,14 @@ interface AuthState {
 const getInitialAuthState = (): { user: User | null; token: string | null } => {
   const token = localStorage.getItem("token");
   const userStr = localStorage.getItem("user");
-
   if (token && userStr) {
     try {
-      const user = JSON.parse(userStr);
-      return { user, token };
+      return { user: JSON.parse(userStr), token };
     } catch {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
     }
   }
-
   return { user: null, token: null };
 };
 
@@ -46,6 +45,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => ({
       user: state.user ? { ...state.user, balance } : null,
     })),
+  setEmailVerified: (emailVerified) =>
+    set((state) => {
+      if (!state.user) return {};
+      const user = { ...state.user, emailVerified };
+      localStorage.setItem("user", JSON.stringify(user));
+      return { user };
+    }),
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -56,8 +62,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     const userStr = localStorage.getItem("user");
     if (token && userStr) {
       try {
-        const user = JSON.parse(userStr);
-        set({ user, token });
+        set({ user: JSON.parse(userStr), token });
       } catch {
         localStorage.removeItem("token");
         localStorage.removeItem("user");

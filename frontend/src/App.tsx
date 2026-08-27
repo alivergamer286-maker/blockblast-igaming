@@ -6,6 +6,7 @@ import RegisterPage from "./pages/RegisterPage";
 import GamePage from "./pages/GamePage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import AdminPage from "./pages/AdminPage";
+import PartnerPage from "./pages/PartnerPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import Layout from "./components/Layout";
 
@@ -19,7 +20,21 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   if (!token) return <Navigate to="/login" replace />;
-  if (user?.role !== "admin") return <Navigate to="/" replace />;
+  if (user?.role !== "admin") {
+    window.location.replace("/");
+    return null;
+  }
+  return <>{children}</>;
+}
+
+function AffiliateRoute({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  if (!token) return <Navigate to="/login" replace />;
+  if (user?.role !== "affiliate" && user?.role !== "admin") {
+    window.location.replace("/");
+    return null;
+  }
   return <>{children}</>;
 }
 
@@ -45,14 +60,25 @@ export default function App() {
         <Route index element={<GamePage />} />
         <Route path="leaderboard" element={<LeaderboardPage />} />
         <Route
-          path="admin"
+          path="ops"
           element={
             <AdminRoute>
               <AdminPage />
             </AdminRoute>
           }
         />
+        <Route
+          path="partner"
+          element={
+            <AffiliateRoute>
+              <PartnerPage />
+            </AffiliateRoute>
+          }
+        />
       </Route>
+      {/* old path reloads home */}
+      <Route path="admin" element={<Navigate to="/" replace />} />
+      <Route path="admin/*" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -16,7 +16,7 @@ import {
 const router = Router();
 
 const authed = [authMiddleware, activeUserMiddleware];
-const admin = [authMiddleware, activeUserMiddleware, adminMiddleware, adminLimiter];
+const ops = [authMiddleware, activeUserMiddleware, adminMiddleware, adminLimiter];
 
 router.post("/auth/register", authLimiter, authController.register);
 router.post("/auth/login", authLimiter, authController.login);
@@ -26,6 +26,7 @@ router.post("/auth/resend-verification", ...authed, authLimiter, authController.
 
 router.get("/wallet", ...authed, walletController.getBalance);
 router.get("/wallet/transactions", ...authed, walletController.getTransactions);
+router.post("/wallet/withdraw", ...authed, walletController.requestWithdraw);
 
 router.post("/game/start", ...authed, gameLimiter, gameController.start);
 router.post("/game/place", ...authed, gameLimiter, gameController.place);
@@ -35,21 +36,30 @@ router.get("/leaderboard", leaderboardController.global);
 router.get("/leaderboard/daily", leaderboardController.daily);
 router.get("/history", ...authed, leaderboardController.history);
 
-router.get("/admin/stats", ...admin, adminController.stats);
-router.get("/admin/users", ...admin, adminController.users);
-router.patch("/admin/users/:id/status", ...admin, adminController.setStatus);
-router.post("/admin/users/:id/balance", ...admin, adminController.adjustBalance);
-router.get("/admin/audit", ...admin, adminController.audit);
-router.get("/admin/withdrawals", ...admin, adminController.withdrawals);
-router.patch("/admin/withdrawals/:id", ...admin, adminController.reviewWithdrawal);
-router.get("/admin/affiliates", ...admin, adminController.affiliates);
-router.post("/admin/affiliates", ...admin, adminController.createAffiliate);
-router.get("/admin/affiliates/:userId", ...admin, adminController.affiliateDetail);
-router.get("/admin/config", ...admin, adminController.getConfig);
-router.patch("/admin/config", ...admin, adminController.updateConfig);
+// Internal ops surface (not advertised as /admin)
+router.get("/ops/stats", ...ops, adminController.stats);
+router.get("/ops/users", ...ops, adminController.users);
+router.patch("/ops/users/:id/status", ...ops, adminController.setStatus);
+router.post("/ops/users/:id/balance", ...ops, adminController.adjustBalance);
+router.get("/ops/audit", ...ops, adminController.audit);
+router.get("/ops/withdrawals", ...ops, adminController.withdrawals);
+router.patch("/ops/withdrawals/:id", ...ops, adminController.reviewWithdrawal);
+router.get("/ops/affiliates", ...ops, adminController.affiliates);
+router.post("/ops/affiliates", ...ops, adminController.createAffiliate);
+router.get("/ops/affiliates/:userId", ...ops, adminController.affiliateDetail);
+router.get("/ops/config", ...ops, adminController.getConfig);
+router.patch("/ops/config", ...ops, adminController.updateConfig);
+
+// Legacy /admin paths → 404 (hide surface)
+router.all("/admin/*", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+router.all("/admin", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
 
 router.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok" });
 });
 
 export default router;

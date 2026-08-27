@@ -3,6 +3,12 @@ import { Piece, Shape, createPieceSet } from "./pieces";
 export const GRID_SIZE = 8;
 export type Board = (string | null)[][];
 
+export interface NearMiss {
+  rows: number[];
+  cols: number[];
+  missedValue: number;
+}
+
 export interface PlaceResult {
   success: boolean;
   board: Board;
@@ -16,6 +22,7 @@ export interface PlaceResult {
   isGameOver: boolean;
   newPieces?: Piece[];
   message?: string;
+  nearMiss?: NearMiss | null;
 }
 
 export interface GameState {
@@ -65,11 +72,35 @@ export function findFullLines(board: Board): { rows: number[]; cols: number[] } 
   for (let c = 0; c < GRID_SIZE; c++) {
     let full = true;
     for (let r = 0; r < GRID_SIZE; r++) {
-      if (board[r][c] === null) { full = false; break; }
+      if (board[r][c] === null) {
+        full = false;
+        break;
+      }
     }
     if (full) cols.push(c);
   }
   return { rows, cols };
+}
+
+/** Rows/cols with exactly 7 filled cells = near miss */
+export function findNearMiss(board: Board): NearMiss | null {
+  const rows: number[] = [];
+  const cols: number[] = [];
+  for (let r = 0; r < GRID_SIZE; r++) {
+    const filled = board[r].filter((c) => c !== null).length;
+    if (filled === GRID_SIZE - 1) rows.push(r);
+  }
+  for (let c = 0; c < GRID_SIZE; c++) {
+    let filled = 0;
+    for (let r = 0; r < GRID_SIZE; r++) {
+      if (board[r][c] !== null) filled++;
+    }
+    if (filled === GRID_SIZE - 1) cols.push(c);
+  }
+  if (rows.length === 0 && cols.length === 0) return null;
+  const lines = rows.length + cols.length;
+  const missedValue = lines * 80 + (lines >= 2 ? Math.floor(lines * 40) : 0);
+  return { rows, cols, missedValue };
 }
 
 export function clearLines(board: Board, rows: number[], cols: number[]): Board {
@@ -91,7 +122,13 @@ export function calculateScore(
   if (linesCleared >= 2) comboBonus = Math.floor(clear * (linesCleared - 1) * 0.5);
   let streakBonus = 0;
   if (streak >= 2 && linesCleared > 0) streakBonus = (streak - 1) * 20;
-  return { placement, clear, comboBonus, streakBonus, total: placement + clear + comboBonus + streakBonus };
+  return {
+    placement,
+    clear,
+    comboBonus,
+    streakBonus,
+    total: placement + clear + comboBonus + streakBonus,
+  };
 }
 
 export function canPlaceAny(board: Board, pieces: Piece[]): boolean {
@@ -105,20 +142,53 @@ export function canPlaceAny(board: Board, pieces: Piece[]): boolean {
   return false;
 }
 
-export function applyMove(state: GameState, pieceIndex: number, row: number, col: number): PlaceResult {
+export function applyMove(
+  state: GameState,
+  pieceIndex: number,
+  row: number,
+  col: number
+): PlaceResult {
   if (pieceIndex < 0 || pieceIndex >= state.pieces.length) {
-    return { success: false, board: state.board, linesCleared: 0, pointsEarned: 0, comboBonus: 0, streakBonus: 0, totalPoints: 0, clearedRows: [], clearedCols: [], isGameOver: false, message: "Invalid piece index" };
+    return {
+      success: false,
+      board: state.board,
+      linesCleared: 0,
+      pointsEarned: 0,
+      comboBonus: 0,
+      streakBonus: 0,
+      totalPoints: 0,
+      clearedRows: [],
+      clearedCols: [],
+      isGameOver: false,
+      message: "Invalid piece index",
+    };
   }
   const piece = state.pieces[pieceIndex];
   if (!canPlace(state.board, piece.shape, row, col)) {
-    return { success: false, board: state.board, linesCleared: 0, pointsEarned: 0, comboBonus: 0, streakBonus: 0, totalPoints: 0, clearedRows: [], clearedCols: [], isGameOver: false, message: "Cannot place piece here" };
+    return {
+      success: false,
+      board: state.board,
+      linesCleared: 0,
+      pointsEarned: 0,
+      comboBonus: 0,
+      streakBonus: 0,
+      totalPoints: 0,
+      clearedRows: [],
+      clearedCols: [],
+      isGameOver: false,
+      message: "Cannot place piece here",
+    };
   }
   let board = placePiece(state.board, piece, row, col);
   const { rows, cols } = findFullLines(board);
   const linesCleared = rows.length + cols.length;
   if (linesCleared > 0) board = clearLines(board, rows, cols);
+
+  // near-miss only when no clear this move
+  const nearMiss = linesCleared === 0 ? findNearMiss(board) : null;
+
   const newCombo = linesCleared > 0 ? state.combo + 1 : 0;
-  const newStreak = linesCleared > 0 ? state.streak + 1 : 0;
+  const newStreak = linesCleared > 0 ? state.streak + 1 : state.streak;
   const scoring = calculateScore(piece.size, linesCleared, newCombo, newStreak);
   let remainingPieces = state.pieces.filter((_, i) => i !== pieceIndex);
   let newPieces: Piece[] | undefined;
@@ -139,6 +209,7 @@ export function applyMove(state: GameState, pieceIndex: number, row: number, col
     clearedCols: cols,
     isGameOver,
     newPieces,
+    nearMiss,
   };
 }
 

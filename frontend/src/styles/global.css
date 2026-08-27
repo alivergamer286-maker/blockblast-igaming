@@ -33,3 +33,63 @@ input { font-family: inherit; outline: none; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--surface); }
 ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 3px; }
+
+@keyframes fadeUp {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-28px); }
+}
+
+@keyframes boardShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes nearMissPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes particleUp {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-40px) scale(0.4); }
+}
+
+@keyframes bounceIn {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes streakFire {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+
+.board-shake {
+  animation: boardShake 0.35s ease-in-out;
+}
+
+.points-float {
+  animation: fadeUp 0.85s ease forwards;
+  pointer-events: none;
+}
+
+.piece-bounce {
+  animation: bounceIn 0.35s ease;
+}
+
+.near-miss-label {
+  animation: fadeUp 1.2s ease forwards;
+  color: #f1c40f;
+  font-weight: 700;
+  font-size: 14px;
+  text-shadow: 0 0 12px rgba(241, 196, 15, 0.6);
+}
+
+.streak-bar-fill {
+  animation: streakFire 1.2s ease-in-out infinite;
+  transition: width 0.35s ease;
+}

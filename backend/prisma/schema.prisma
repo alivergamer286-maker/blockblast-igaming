@@ -13,10 +13,11 @@ model User {
   username        String         @unique
   passwordHash    String
   balance         Decimal        @default(1000) @db.Decimal(18, 2)
-  role            String         @default("user") // user | admin | affiliate
+  role            String         @default("user")
   status          String         @default("active")
   banReason       String?
   emailVerified   Boolean        @default(false)
+  cpf             String?
   referredById    String?
   referredBy      User?          @relation("Referrals", fields: [referredById], references: [id])
   referrals       User[]         @relation("Referrals")
@@ -64,6 +65,8 @@ model PlatformConfig {
   maxMultiplier   Decimal  @default(10) @db.Decimal(10, 2)
   minBet          Decimal  @default(1) @db.Decimal(18, 2)
   maxBet          Decimal  @default(100) @db.Decimal(18, 2)
+  /** max fraction of stake that can return (e.g. 0.2 = up to 20% of bet) */
+  returnCap       Decimal  @default(2.0) @db.Decimal(10, 4)
   updatedAt       DateTime @updatedAt
 }
 
@@ -175,6 +178,9 @@ model WithdrawalRequest {
   user        User     @relation(fields: [userId], references: [id])
   amount      Decimal  @db.Decimal(18, 2)
   status      String   @default("pending")
+  cpf         String?
+  pixKey      String?
+  fullName    String?
   note        String?
   reviewedBy  String?
   reviewedAt  DateTime?

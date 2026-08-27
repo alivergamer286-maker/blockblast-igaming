@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../utils/prisma";
 
+/** Respond 404 so ops surface is not advertised */
 export async function adminMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   if (!req.user) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(404).json({ error: "Not found" });
     return;
   }
 
@@ -16,13 +17,8 @@ export async function adminMiddleware(
     select: { role: true, status: true },
   });
 
-  if (!user || user.role !== "admin") {
-    res.status(403).json({ error: "Admin only" });
-    return;
-  }
-
-  if (user.status !== "active") {
-    res.status(403).json({ error: "Account not active" });
+  if (!user || user.role !== "admin" || user.status !== "active") {
+    res.status(404).json({ error: "Not found" });
     return;
   }
 

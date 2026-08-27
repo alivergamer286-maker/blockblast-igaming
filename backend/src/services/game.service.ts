@@ -23,6 +23,15 @@ function round2(n: number) {
 }
 
 export async function startSession(userId: string, betAmount: number = 0) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  if (!user.emailVerified) {
+    throw new Error("Confirm your email before playing");
+  }
+  if (user.status !== "active") {
+    throw new Error("Account not active");
+  }
+
   const settings = await getPlatformSettings();
   const bet = round2(Number(betAmount) || 0);
 
@@ -40,7 +49,7 @@ export async function startSession(userId: string, betAmount: number = 0) {
   });
 
   if (bet > 0) {
-    await debit(userId, bet, "bet", `bet:${userId}:${Date.now()}`, "Game bet");
+    await debit(userId, bet, "bet", `bet:${userId}:${Date.now()}`, "Game stake");
     await recordAffiliateWager(userId, bet);
   }
 
@@ -74,7 +83,7 @@ export async function startSession(userId: string, betAmount: number = 0) {
       maxBet: settings.maxBet,
       pointsPerUnit: settings.pointsPerUnit,
       maxMultiplier: settings.maxMultiplier,
-      houseEdge: settings.houseEdge,
+      returnCap: settings.returnCap,
     },
   };
 }
@@ -148,13 +157,7 @@ export async function placePiece(
     payout = potentialWin;
     updateData.payout = payout;
     if (payout > 0) {
-      await credit(
-        userId,
-        payout,
-        "win",
-        `win:${sessionId}`,
-        `Win score ${newScore}`
-      );
+      await credit(userId, payout, "win", `win:${sessionId}`, `Win score ${newScore}`);
     }
     await prisma.score.create({
       data: {
@@ -185,7 +188,6 @@ export async function placePiece(
   };
 }
 
-/** Cashout / desistir: credita o potentialWin atual e encerra a sessão */
 export async function endSession(userId: string, sessionId: string) {
   const session = await prisma.gameSession.findFirst({
     where: { id: sessionId, userId, status: "active" },
@@ -231,12 +233,4 @@ export async function endSession(userId: string, sessionId: string) {
     payout,
     profit: round2(payout - bet),
   };
-}
-
-export async function getSession(userId: string, sessionId: string) {
-  const session = await prisma.gameSession.findFirst({
-    where: { id: sessionId, userId },
-  });
-  if (!session) throw new Error("Session not found");
-  return session;
 }

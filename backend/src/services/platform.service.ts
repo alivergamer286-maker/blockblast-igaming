@@ -7,6 +7,8 @@ export type PlatformSettings = {
   maxMultiplier: number;
   minBet: number;
   maxBet: number;
+  /** max return as multiple of stake (0.2 = max 20% of bet back) */
+  returnCap: number;
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -20,6 +22,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
         maxMultiplier: 10,
         minBet: config.minBet,
         maxBet: config.maxBet,
+        returnCap: 2.0,
       },
     });
   }
@@ -29,6 +32,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     maxMultiplier: Number(row.maxMultiplier),
     minBet: Number(row.minBet),
     maxBet: Number(row.maxBet),
+    returnCap: Number((row as any).returnCap ?? 2),
   };
 }
 
@@ -48,6 +52,7 @@ export async function updatePlatformSettings(
         : {}),
       ...(patch.minBet !== undefined ? { minBet: patch.minBet } : {}),
       ...(patch.maxBet !== undefined ? { maxBet: patch.maxBet } : {}),
+      ...(patch.returnCap !== undefined ? { returnCap: patch.returnCap } : {}),
     },
   });
   return {
@@ -56,10 +61,14 @@ export async function updatePlatformSettings(
     maxMultiplier: Number(row.maxMultiplier),
     minBet: Number(row.minBet),
     maxBet: Number(row.maxBet),
+    returnCap: Number((row as any).returnCap ?? 2),
   };
 }
 
-/** payout = bet * min(score / pointsPerUnit, maxMultiplier) * (1 - houseEdge) */
+/**
+ * payout grows with score, reduced by houseEdge, hard-capped by returnCap * bet.
+ * Example: bet 20, returnCap 0.2 → never pays more than R$ 4.00
+ */
 export function calcPayout(
   bet: number,
   score: number,
@@ -68,7 +77,8 @@ export function calcPayout(
   if (bet <= 0 || score <= 0) return 0;
   const rawMult = score / settings.pointsPerUnit;
   const mult = Math.min(rawMult, settings.maxMultiplier);
-  const gross = bet * mult;
-  const net = gross * (1 - settings.houseEdge);
+  let net = bet * mult * (1 - settings.houseEdge);
+  const cap = bet * settings.returnCap;
+  if (net > cap) net = cap;
   return Math.floor(net * 100) / 100;
 }

@@ -3,7 +3,13 @@ import Board from "../game/Board";
 import PieceTray from "../game/PieceTray";
 import { useGameStore } from "../store/gameStore";
 import { useAuthStore } from "../store/authStore";
-import { startGame, placePiece, endGame, getBalance } from "../services/api";
+import {
+  startGame,
+  placePiece,
+  endGame,
+  getBalance,
+  resendVerification,
+} from "../services/api";
 
 export default function GamePage() {
   const {
@@ -20,10 +26,12 @@ export default function GamePage() {
 
   const setBalance = useAuthStore((s) => s.setBalance);
   const balance = useAuthStore((s) => s.user?.balance ?? 0);
+  const emailVerified = useAuthStore((s) => s.user?.emailVerified);
   const [loading, setLoading] = useState(false);
   const [betAmount, setBetAmount] = useState(10);
   const [customBet, setCustomBet] = useState("");
   const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
   const [lastPoints, setLastPoints] = useState<number | null>(null);
   const [potentialWin, setPotentialWin] = useState(0);
   const [sessionBet, setSessionBet] = useState(0);
@@ -40,7 +48,20 @@ export default function GamePage() {
     return betAmount;
   }
 
+  async function handleResend() {
+    try {
+      await resendVerification();
+      setMsg("E-mail de confirmação reenviado");
+    } catch (err: any) {
+      setError(err.response?.data?.error || "Falha ao reenviar");
+    }
+  }
+
   async function handleStart() {
+    if (!emailVerified) {
+      setError("Confirme seu e-mail antes de jogar");
+      return;
+    }
     setLoading(true);
     setError("");
     setCashoutResult(null);
@@ -125,11 +146,22 @@ export default function GamePage() {
           Nova Partida
         </h2>
         <p style={{ color: "#a0a0b0", marginBottom: 8, fontSize: 14 }}>
-          Escolha o valor da aposta · saldo R$ {balance.toFixed(2)}
+          Escolha o valor · saldo R$ {balance.toFixed(2)}
         </p>
 
+        {!emailVerified && (
+          <div style={styles.verifyBox}>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              Confirme seu e-mail para liberar o jogo.
+            </p>
+            <button style={styles.resendBtn} onClick={handleResend}>
+              Reenviar e-mail
+            </button>
+          </div>
+        )}
+
         <div style={styles.betBox}>
-          <label style={{ fontSize: 13, color: "#a0a0b0" }}>Aposta rápida</label>
+          <label style={{ fontSize: 13, color: "#a0a0b0" }}>Valor rápido</label>
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             {[1, 5, 10, 25, 50, 100].map((v) => (
               <button
@@ -160,20 +192,28 @@ export default function GamePage() {
             style={styles.input}
           />
           <p style={{ color: "#888", fontSize: 12, marginTop: 8 }}>
-            Aposta atual: <strong>R$ {resolvedBet().toFixed(2)}</strong>
+            Valor da partida: <strong>R$ {resolvedBet().toFixed(2)}</strong>
           </p>
         </div>
 
         {error && <p style={{ color: "#e74c3c", marginBottom: 12 }}>{error}</p>}
+        {msg && <p style={{ color: "#2ecc71", marginBottom: 12 }}>{msg}</p>}
 
-        <button style={styles.startBtn} onClick={handleStart} disabled={loading}>
+        <button
+          style={{
+            ...styles.startBtn,
+            opacity: emailVerified ? 1 : 0.5,
+          }}
+          onClick={handleStart}
+          disabled={loading || !emailVerified}
+        >
           {loading ? "Carregando..." : "Jogar"}
         </button>
 
         {cashoutResult && (
           <p style={{ marginTop: 16, color: "#2ecc71", fontSize: 14 }}>
-            Último resultado: payout R$ {cashoutResult.payout.toFixed(2)}{" "}
-            (lucro R$ {cashoutResult.profit.toFixed(2)})
+            Último resultado: R$ {cashoutResult.payout.toFixed(2)}{" "}
+            (resultado R$ {cashoutResult.profit.toFixed(2)})
           </p>
         )}
       </div>
@@ -191,7 +231,7 @@ export default function GamePage() {
           )}
         </div>
         <div style={styles.stat}>
-          <span style={styles.statLabel}>Aposta</span>
+          <span style={styles.statLabel}>Stake</span>
           <span style={styles.statValue}>R$ {sessionBet.toFixed(2)}</span>
         </div>
         <div style={styles.stat}>
@@ -224,16 +264,13 @@ export default function GamePage() {
         <div style={styles.overlay}>
           <div style={styles.gameOverCard}>
             <h2 className="pixel" style={{ fontSize: 16, marginBottom: 12 }}>
-              GAME OVER
+              FIM DE JOGO
             </h2>
             <p style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>
               {score.toLocaleString()}
             </p>
             <p style={{ color: "#2ecc71", marginBottom: 8 }}>
-              Payout R$ {(cashoutResult?.payout ?? potentialWin).toFixed(2)}
-            </p>
-            <p style={{ color: "#a0a0b0", marginBottom: 20, fontSize: 13 }}>
-              Max Combo: {maxCombo}x
+              Prêmio R$ {(cashoutResult?.payout ?? potentialWin).toFixed(2)}
             </p>
             <button style={styles.startBtn} onClick={handleEnd}>
               Continuar
@@ -244,7 +281,7 @@ export default function GamePage() {
 
       {!isGameOver && (
         <button style={styles.cashoutBtn} onClick={handleEnd}>
-          Encerrar e sacar R$ {potentialWin.toFixed(2)}
+          Encerrar · R$ {potentialWin.toFixed(2)}
         </button>
       )}
     </div>
@@ -259,6 +296,27 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: 420,
     width: "100%",
     padding: 24,
+  },
+  verifyBox: {
+    width: "100%",
+    background: "#2a1a20",
+    border: "1px solid #e94560",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  resendBtn: {
+    background: "#e94560",
+    color: "#fff",
+    border: "none",
+    borderRadius: 8,
+    padding: "8px 14px",
+    fontWeight: 600,
+    cursor: "pointer",
   },
   betBox: { width: "100%", marginBottom: 24 },
   betBtn: {

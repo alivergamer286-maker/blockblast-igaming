@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Board from "../game/Board";
 import PieceTray from "../game/PieceTray";
 import { useGameStore } from "../store/gameStore";
@@ -11,16 +11,26 @@ import {
   resendVerification,
 } from "../services/api";
 
+function eventEndMs() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
 export default function GamePage() {
   const {
     sessionId,
     score,
     combo,
     maxCombo,
+    streak,
+    streakGrace,
     isGameOver,
     selectedPiece,
+    nearMiss,
     setSession,
     updateAfterMove,
+    clearNearMiss,
     reset,
   } = useGameStore();
 
@@ -39,6 +49,31 @@ export default function GamePage() {
     payout: number;
     profit: number;
   } | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const [gamesToday, setGamesToday] = useState(() =>
+    Number(localStorage.getItem("bb_games_today") || 0)
+  );
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!nearMiss) return;
+    const t = setTimeout(() => clearNearMiss(), 1200);
+    return () => clearTimeout(t);
+  }, [nearMiss, clearNearMiss]);
+
+  const countdown = useMemo(() => {
+    const left = Math.max(0, eventEndMs() - now);
+    const h = Math.floor(left / 3600000);
+    const m = Math.floor((left % 3600000) / 60000);
+    const s = Math.floor((left % 60000) / 1000);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }, [now]);
+
+  const streakPct = Math.min(100, streak * 12);
 
   function resolvedBet() {
     if (customBet.trim() !== "") {
@@ -76,6 +111,9 @@ export default function GamePage() {
       });
       setSessionBet(data.betAmount ?? bet);
       setPotentialWin(data.potentialWin ?? 0);
+      const next = gamesToday + 1;
+      setGamesToday(next);
+      localStorage.setItem("bb_games_today", String(next));
       if (data.balance !== undefined) {
         setBalance(data.balance);
       } else {
@@ -103,6 +141,9 @@ export default function GamePage() {
         isGameOver: data.isGameOver,
         clearedRows: data.clearedRows,
         clearedCols: data.clearedCols,
+        pointsEarned: data.pointsEarned,
+        nearMiss: data.nearMiss,
+        linesCleared: data.linesCleared,
       });
       setLastPoints(data.pointsEarned);
       setPotentialWin(data.potentialWin ?? 0);
@@ -140,13 +181,27 @@ export default function GamePage() {
   }
 
   if (!sessionId) {
+    const dailyLeft = Math.max(0, 3 - gamesToday);
     return (
       <div style={styles.lobby}>
+        <div style={styles.eventBanner}>
+          <span style={{ fontWeight: 700, color: "#f1c40f" }}>Evento do dia</span>
+          <span style={{ fontSize: 13, color: "#ccc" }}>
+            multi 1.5x · acaba em {countdown}
+          </span>
+        </div>
+
         <h2 className="pixel" style={{ fontSize: 18, marginBottom: 8 }}>
           Nova Partida
         </h2>
-        <p style={{ color: "#a0a0b0", marginBottom: 8, fontSize: 14 }}>
-          Escolha o valor · saldo R$ {balance.toFixed(2)}
+        <p style={{ color: "#a0a0b0", marginBottom: 4, fontSize: 14 }}>
+          saldo{" "}
+          <span style={{ color: "#2ecc71", fontWeight: 700 }}>
+            R$ {balance.toFixed(2)}
+          </span>
+        </p>
+        <p style={{ color: "#888", fontSize: 12, marginBottom: 12 }}>
+          meta diária: {dailyLeft === 0 ? "bônus liberado ✨" : `mais ${dailyLeft} partida(s)`}
         </p>
 
         {!emailVerified && (
@@ -200,10 +255,7 @@ export default function GamePage() {
         {msg && <p style={{ color: "#2ecc71", marginBottom: 12 }}>{msg}</p>}
 
         <button
-          style={{
-            ...styles.startBtn,
-            opacity: emailVerified ? 1 : 0.5,
-          }}
+          style={{ ...styles.startBtn, opacity: emailVerified ? 1 : 0.5 }}
           onClick={handleStart}
           disabled={loading || !emailVerified}
         >
@@ -211,10 +263,15 @@ export default function GamePage() {
         </button>
 
         {cashoutResult && (
-          <p style={{ marginTop: 16, color: "#2ecc71", fontSize: 14 }}>
-            Último resultado: R$ {cashoutResult.payout.toFixed(2)}{" "}
-            (resultado R$ {cashoutResult.profit.toFixed(2)})
-          </p>
+          <div style={styles.lastResult}>
+            <p style={{ color: "#2ecc71", fontWeight: 700, margin: 0 }}>
+              você saiu com {cashoutResult.profit >= 0 ? "+" : ""}
+              R$ {cashoutResult.profit.toFixed(2)}
+            </p>
+            <p style={{ color: "#888", fontSize: 12, margin: "4px 0 0" }}>
+              prêmio R$ {cashoutResult.payout.toFixed(2)}
+            </p>
+          </div>
         )}
       </div>
     );
@@ -222,12 +279,38 @@ export default function GamePage() {
 
   return (
     <div style={styles.game}>
+      <div style={styles.streakWrap}>
+        <div style={styles.streakTop}>
+          <span style={{ fontSize: 12, color: "#f1c40f", fontWeight: 700 }}>
+            STREAK {streak}
+            {streakGrace === 0 && streak > 0 ? " · última chance" : ""}
+          </span>
+          <span style={{ fontSize: 11, color: "#888" }}>combo {combo}x</span>
+        </div>
+        <div style={styles.streakTrack}>
+          <div
+            className="streak-bar-fill"
+            style={{
+              width: `${streakPct}%`,
+              height: "100%",
+              borderRadius: 99,
+              background:
+                streak > 0
+                  ? "linear-gradient(90deg, #e67e22, #f1c40f)"
+                  : "#2a2a40",
+            }}
+          />
+        </div>
+      </div>
+
       <div style={styles.hud}>
         <div style={styles.stat}>
           <span style={styles.statLabel}>Score</span>
           <span style={styles.statValue}>{score.toLocaleString()}</span>
           {lastPoints !== null && lastPoints > 0 && (
-            <span style={styles.pointsPop}>+{lastPoints}</span>
+            <span className="points-float" style={styles.pointsPop}>
+              +{lastPoints}
+            </span>
           )}
         </div>
         <div style={styles.stat}>
@@ -241,20 +324,33 @@ export default function GamePage() {
           </span>
         </div>
         <div style={styles.stat}>
-          <span style={styles.statLabel}>Combo</span>
-          <span
-            style={{
-              ...styles.statValue,
-              color: combo > 0 ? "#f1c40f" : "#eaeaea",
-            }}
-          >
-            {combo}x
-          </span>
+          <span style={styles.statLabel}>Max combo</span>
+          <span style={styles.statValue}>{maxCombo}x</span>
         </div>
       </div>
 
-      <Board onPlace={handlePlace} />
-      <PieceTray />
+      <div style={{ position: "relative", width: "100%" }}>
+        <Board onPlace={handlePlace} />
+        {nearMiss && (
+          <div style={styles.nearMissOverlay}>
+            <span className="near-miss-label">quase!</span>
+            <span
+              style={{
+                textDecoration: "line-through",
+                color: "#aaa",
+                fontSize: 13,
+                marginTop: 4,
+              }}
+            >
+              +{nearMiss.missedValue} pts
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="piece-bounce" style={{ width: "100%" }}>
+        <PieceTray />
+      </div>
 
       {error && (
         <p style={{ color: "#e74c3c", marginTop: 8, fontSize: 13 }}>{error}</p>
@@ -263,14 +359,20 @@ export default function GamePage() {
       {isGameOver && (
         <div style={styles.overlay}>
           <div style={styles.gameOverCard}>
-            <h2 className="pixel" style={{ fontSize: 16, marginBottom: 12 }}>
+            <h2 className="pixel" style={{ fontSize: 14, marginBottom: 12 }}>
               FIM DE JOGO
             </h2>
-            <p style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>
+            <p style={{ fontSize: 32, fontWeight: 700, marginBottom: 4 }}>
               {score.toLocaleString()}
             </p>
-            <p style={{ color: "#2ecc71", marginBottom: 8 }}>
-              Prêmio R$ {(cashoutResult?.payout ?? potentialWin).toFixed(2)}
+            <p style={{ color: "#2ecc71", marginBottom: 6, fontWeight: 700 }}>
+              prêmio R$ {(cashoutResult?.payout ?? potentialWin).toFixed(2)}
+            </p>
+            <p style={{ color: "#a0a0b0", marginBottom: 8, fontSize: 13 }}>
+              max combo {maxCombo}x · streak {streak}
+            </p>
+            <p style={{ color: "#f1c40f", fontSize: 12, marginBottom: 16 }}>
+              ranking momentâneo · continue subindo
             </p>
             <button style={styles.startBtn} onClick={handleEnd}>
               Continuar
@@ -296,6 +398,26 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: 420,
     width: "100%",
     padding: 24,
+  },
+  eventBanner: {
+    width: "100%",
+    background: "linear-gradient(90deg, #2a1a00, #1a1a2e)",
+    border: "1px solid #f1c40f55",
+    borderRadius: 12,
+    padding: "10px 14px",
+    marginBottom: 16,
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  lastResult: {
+    marginTop: 20,
+    padding: 14,
+    borderRadius: 12,
+    background: "#122018",
+    border: "1px solid #2ecc7144",
+    width: "100%",
+    textAlign: "center",
   },
   verifyBox: {
     width: "100%",
@@ -359,6 +481,18 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: 400,
     position: "relative",
   },
+  streakWrap: { width: "100%", marginBottom: 12 },
+  streakTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  streakTrack: {
+    height: 8,
+    background: "#2a2a40",
+    borderRadius: 99,
+    overflow: "hidden",
+  },
   hud: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -388,10 +522,21 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     fontSize: 14,
   },
+  nearMissOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: "40%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    pointerEvents: "none",
+    zIndex: 5,
+  },
   overlay: {
     position: "absolute",
     inset: 0,
-    background: "rgba(15,15,26,0.85)",
+    background: "rgba(15,15,26,0.88)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -401,7 +546,7 @@ const styles: Record<string, React.CSSProperties> = {
   gameOverCard: {
     background: "#1a1a2e",
     borderRadius: 16,
-    padding: "32px 40px",
+    padding: "28px 36px",
     textAlign: "center",
     border: "1px solid #2a2a40",
   },

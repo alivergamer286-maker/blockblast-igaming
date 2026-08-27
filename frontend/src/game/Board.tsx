@@ -16,8 +16,22 @@ export default function Board({ onPlace }: Props) {
   const pieces = useGameStore((s) => s.pieces);
   const selectedPiece = useGameStore((s) => s.selectedPiece);
   const lastCleared = useGameStore((s) => s.lastCleared);
+  const nearMiss = useGameStore((s) => s.nearMiss);
+  const shake = useGameStore((s) => s.shake);
+  const clearShake = useGameStore((s) => s.clearShake);
 
   const hoverRef = useRef<{ row: number; col: number } | null>(null);
+  const nearMissUntil = useRef(0);
+
+  useEffect(() => {
+    if (nearMiss) nearMissUntil.current = Date.now() + 600;
+  }, [nearMiss]);
+
+  useEffect(() => {
+    if (!shake) return;
+    const t = setTimeout(() => clearShake(), 350);
+    return () => clearTimeout(t);
+  }, [shake, clearShake]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -32,11 +46,16 @@ export default function Board({ onPlace }: Props) {
     ctx.roundRect(0, 0, BOARD_PX, BOARD_PX, 12);
     ctx.fill();
 
+    const showNear = nearMiss && Date.now() < nearMissUntil.current;
+
     for (let r = 0; r < SIZE; r++) {
       for (let c = 0; c < SIZE; c++) {
         const x = c * (CELL + GAP);
         const y = r * (CELL + GAP);
         const color = board[r][c];
+
+        const isNearRow = showNear && nearMiss!.rows.includes(r);
+        const isNearCol = showNear && nearMiss!.cols.includes(c);
 
         if (color) {
           const grad = ctx.createLinearGradient(x, y, x + CELL, y + CELL);
@@ -53,6 +72,13 @@ export default function Board({ onPlace }: Props) {
           ctx.fill();
         } else {
           ctx.fillStyle = "#2a2a40";
+          ctx.beginPath();
+          ctx.roundRect(x, y, CELL, CELL, 6);
+          ctx.fill();
+        }
+
+        if (isNearRow || isNearCol) {
+          ctx.fillStyle = "rgba(241, 196, 15, 0.45)";
           ctx.beginPath();
           ctx.roundRect(x, y, CELL, CELL, 6);
           ctx.fill();
@@ -82,7 +108,7 @@ export default function Board({ onPlace }: Props) {
     }
 
     if (lastCleared) {
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.fillStyle = "rgba(255,215,80,0.4)";
       for (const r of lastCleared.rows) {
         for (let c = 0; c < SIZE; c++) {
           const x = c * (CELL + GAP);
@@ -102,11 +128,19 @@ export default function Board({ onPlace }: Props) {
         }
       }
     }
-  }, [board, pieces, selectedPiece, lastCleared]);
+  }, [board, pieces, selectedPiece, lastCleared, nearMiss]);
 
   useEffect(() => {
     draw();
-  }, [draw]);
+    if (nearMiss) {
+      const id = setInterval(draw, 80);
+      const stop = setTimeout(() => clearInterval(id), 700);
+      return () => {
+        clearInterval(id);
+        clearTimeout(stop);
+      };
+    }
+  }, [draw, nearMiss]);
 
   function getCellFromEvent(e: React.MouseEvent | React.TouchEvent) {
     const canvas = canvasRef.current!;
@@ -154,6 +188,7 @@ export default function Board({ onPlace }: Props) {
       ref={canvasRef}
       width={BOARD_PX}
       height={BOARD_PX}
+      className={shake ? "board-shake" : undefined}
       style={{
         width: "100%",
         maxWidth: BOARD_PX,

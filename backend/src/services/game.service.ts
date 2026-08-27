@@ -184,6 +184,7 @@ export async function placePiece(
     clearedCols: result.clearedCols,
     betAmount: bet,
     potentialWin,
+    nearMiss: result.nearMiss ?? null,
     payout: result.isGameOver ? payout : undefined,
   };
 }

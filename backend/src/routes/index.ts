@@ -1,9 +1,10 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import * as authController from "../controllers/auth.controller";
 import * as gameController from "../controllers/game.controller";
 import * as walletController from "../controllers/wallet.controller";
 import * as leaderboardController from "../controllers/leaderboard.controller";
 import * as adminController from "../controllers/admin.controller";
+import * as affiliateService from "../services/affiliate.service";
 import { authMiddleware } from "../middleware/auth";
 import { activeUserMiddleware } from "../middleware/activeUser";
 import { adminMiddleware } from "../middleware/admin";
@@ -12,6 +13,7 @@ import {
   gameLimiter,
   adminLimiter,
 } from "../middleware/rateLimit";
+import { prisma } from "../utils/prisma";
 
 const router = Router();
 
@@ -36,7 +38,24 @@ router.get("/leaderboard", leaderboardController.global);
 router.get("/leaderboard/daily", leaderboardController.daily);
 router.get("/history", ...authed, leaderboardController.history);
 
-// Internal ops surface (not advertised as /admin)
+// Affiliate self-service
+router.get("/partner/me", ...authed, async (req: Request, res: Response) => {
+  try {
+    const u = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { role: true },
+    });
+    if (!u || (u.role !== "affiliate" && u.role !== "admin")) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const data = await affiliateService.getAffiliateDetail(req.user!.userId);
+    res.json(data);
+  } catch {
+    res.status(404).json({ error: "Not found" });
+  }
+});
+
 router.get("/ops/stats", ...ops, adminController.stats);
 router.get("/ops/users", ...ops, adminController.users);
 router.patch("/ops/users/:id/status", ...ops, adminController.setStatus);
@@ -50,7 +69,6 @@ router.get("/ops/affiliates/:userId", ...ops, adminController.affiliateDetail);
 router.get("/ops/config", ...ops, adminController.getConfig);
 router.patch("/ops/config", ...ops, adminController.updateConfig);
 
-// Legacy /admin paths → 404 (hide surface)
 router.all("/admin/*", (_req, res) => {
   res.status(404).json({ error: "Not found" });
 });

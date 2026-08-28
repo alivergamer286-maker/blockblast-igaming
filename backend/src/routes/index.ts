@@ -29,6 +29,8 @@ router.post("/auth/resend-verification", ...authed, authLimiter, authController.
 router.get("/wallet", ...authed, walletController.getBalance);
 router.get("/wallet/transactions", ...authed, walletController.getTransactions);
 router.post("/wallet/withdraw", ...authed, walletController.requestWithdraw);
+router.post("/wallet/deposit", ...authed, walletController.requestDeposit);
+router.post("/wallet/cpf", ...authed, walletController.bindCpf);
 
 router.post("/game/start", ...authed, gameLimiter, gameController.start);
 router.post("/game/place", ...authed, gameLimiter, gameController.place);
@@ -59,6 +61,7 @@ router.get("/ops/users", ...ops, adminController.users);
 router.patch("/ops/users/:id/status", ...ops, adminController.setStatus);
 router.post("/ops/users/:id/balance", ...ops, adminController.adjustBalance);
 router.patch("/ops/users/:id/economy", ...ops, adminController.setUserEconomy);
+router.patch("/ops/users/:id/role", ...ops, adminController.setUserRole);
 router.get("/ops/audit", ...ops, adminController.audit);
 router.get("/ops/withdrawals", ...ops, adminController.withdrawals);
 router.patch("/ops/withdrawals/:id", ...ops, adminController.reviewWithdrawal);

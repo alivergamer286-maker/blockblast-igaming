@@ -13,6 +13,18 @@ function clientIp(req: Request): string | undefined {
   return req.socket.remoteAddress;
 }
 
+async function assertOwner(adminId: string) {
+  const settings = await platformService.getPlatformSettings();
+  const admin = await prisma.user.findUnique({ where: { id: adminId } });
+  if (!admin) throw new Error("Admin not found");
+  const ownerEmail = (settings.ownerEmail || process.env.OWNER_EMAIL || "")
+    .toLowerCase()
+    .trim();
+  if (!ownerEmail || admin.email.toLowerCase() !== ownerEmail) {
+    throw new Error("Somente o dono da plataforma pode fazer isso");
+  }
+}
+
 export async function stats(_req: Request, res: Response) {
   try {
     res.json(await adminService.dashboardStats());
@@ -106,6 +118,35 @@ export async function setUserEconomy(req: Request, res: Response) {
       engagementMode: user.engagementMode,
       gamesPlayed: user.gamesPlayed,
     });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+/** Only platform owner can grant/revoke admin */
+export async function setUserRole(req: Request, res: Response) {
+  try {
+    await assertOwner(req.user!.userId);
+    const schema = z.object({
+      role: z.enum(["user", "admin", "affiliate"]),
+    });
+    const body = schema.parse(req.body);
+    if (req.params.id === req.user!.userId && body.role !== "admin") {
+      throw new Error("Não pode remover o próprio admin");
+    }
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { role: body.role },
+    });
+    await writeAudit({
+      actorId: req.user!.userId,
+      action: "user.role",
+      targetType: "user",
+      targetId: user.id,
+      meta: { role: body.role },
+      ip: clientIp(req),
+    });
+    res.json({ id: user.id, role: user.role });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -209,6 +250,8 @@ export async function updateConfig(req: Request, res: Response) {
       engagementHookGames: z.number().int().min(0).max(1000).optional(),
       engagementHookPct: z.number().min(0).max(500).optional(),
       engagementTightPct: z.number().min(0).max(500).optional(),
+      winRatePct: z.number().min(0).max(100).optional(),
+      housePool: z.number().min(0).optional(),
     });
     const body = schema.parse(req.body);
     res.json(await platformService.updatePlatformSettings(body));

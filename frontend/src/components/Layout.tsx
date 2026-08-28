@@ -34,6 +34,15 @@ export default function Layout() {
           >
             Ranking
           </NavLink>
+          <NavLink
+            to="/withdraw"
+            style={({ isActive }) => ({
+              ...styles.link,
+              color: isActive ? "#e94560" : "#a0a0b0",
+            })}
+          >
+            Sacar
+          </NavLink>
           {isAdmin && (
             <NavLink
               to="/ops"
@@ -96,7 +105,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
   },
   logo: { fontSize: 14, letterSpacing: 1 },
-  nav: { display: "flex", gap: 24 },
+  nav: { display: "flex", gap: 20, flexWrap: "wrap" },
   link: {
     textDecoration: "none",
     fontWeight: 600,

@@ -7,6 +7,7 @@ import GamePage from "./pages/GamePage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import AdminPage from "./pages/AdminPage";
 import PartnerPage from "./pages/PartnerPage";
+import WithdrawPage from "./pages/WithdrawPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import Layout from "./components/Layout";
 
@@ -59,6 +60,7 @@ export default function App() {
       >
         <Route index element={<GamePage />} />
         <Route path="leaderboard" element={<LeaderboardPage />} />
+        <Route path="withdraw" element={<WithdrawPage />} />
         <Route
           path="ops"
           element={
@@ -76,7 +78,6 @@ export default function App() {
           }
         />
       </Route>
-      {/* old path reloads home */}
       <Route path="admin" element={<Navigate to="/" replace />} />
       <Route path="admin/*" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />

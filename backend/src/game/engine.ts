@@ -82,7 +82,6 @@ export function findFullLines(board: Board): { rows: number[]; cols: number[] } 
   return { rows, cols };
 }
 
-/** Rows/cols with exactly 7 filled cells = near miss */
 export function findNearMiss(board: Board): NearMiss | null {
   const rows: number[] = [];
   const cols: number[] = [];
@@ -142,11 +141,15 @@ export function canPlaceAny(board: Board, pieces: Piece[]): boolean {
   return false;
 }
 
+/**
+ * difficultyBias: 0 easy … 1 near payout ceiling (harder bags, still looks like random skill).
+ */
 export function applyMove(
   state: GameState,
   pieceIndex: number,
   row: number,
-  col: number
+  col: number,
+  difficultyBias = 0
 ): PlaceResult {
   if (pieceIndex < 0 || pieceIndex >= state.pieces.length) {
     return {
@@ -184,7 +187,6 @@ export function applyMove(
   const linesCleared = rows.length + cols.length;
   if (linesCleared > 0) board = clearLines(board, rows, cols);
 
-  // near-miss only when no clear this move
   const nearMiss = linesCleared === 0 ? findNearMiss(board) : null;
 
   const newCombo = linesCleared > 0 ? state.combo + 1 : 0;
@@ -193,7 +195,7 @@ export function applyMove(
   let remainingPieces = state.pieces.filter((_, i) => i !== pieceIndex);
   let newPieces: Piece[] | undefined;
   if (remainingPieces.length === 0) {
-    newPieces = createPieceSet();
+    newPieces = createPieceSet(difficultyBias);
     remainingPieces = newPieces;
   }
   const isGameOver = !canPlaceAny(board, remainingPieces);
@@ -213,10 +215,10 @@ export function applyMove(
   };
 }
 
-export function createInitialState(): GameState {
+export function createInitialState(difficultyBias = 0): GameState {
   return {
     board: createEmptyBoard(),
-    pieces: createPieceSet(),
+    pieces: createPieceSet(difficultyBias),
     score: 0,
     linesCleared: 0,
     combo: 0,

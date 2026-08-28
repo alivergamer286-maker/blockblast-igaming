@@ -8,12 +8,15 @@ export type PlatformSettings = {
   minBet: number;
   maxBet: number;
   returnCap: number;
-  /** 0–100+: % of stake max return to player (20 = max 20% of bet) */
   playerReturnPct: number;
   engagementEnabled: boolean;
   engagementHookGames: number;
   engagementHookPct: number;
   engagementTightPct: number;
+  /** % of sessions that may receive a non-zero payout (house still capped) */
+  winRatePct: number;
+  housePool: number;
+  ownerEmail: string | null;
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -33,6 +36,9 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
         engagementHookGames: 5,
         engagementHookPct: 120,
         engagementTightPct: 20,
+        winRatePct: 50,
+        housePool: 0,
+        ownerEmail: process.env.OWNER_EMAIL || null,
       } as any,
     });
   }
@@ -48,6 +54,9 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     engagementHookGames: Number(row.engagementHookGames ?? 5),
     engagementHookPct: Number(row.engagementHookPct ?? 120),
     engagementTightPct: Number(row.engagementTightPct ?? 20),
+    winRatePct: Number(row.winRatePct ?? 50),
+    housePool: Number(row.housePool ?? 0),
+    ownerEmail: row.ownerEmail || process.env.OWNER_EMAIL || null,
   };
 }
 
@@ -56,20 +65,38 @@ export async function updatePlatformSettings(
 ): Promise<PlatformSettings> {
   await getPlatformSettings();
   const data: any = {};
-  if (patch.houseEdge !== undefined) data.houseEdge = patch.houseEdge;
-  if (patch.pointsPerUnit !== undefined) data.pointsPerUnit = patch.pointsPerUnit;
-  if (patch.maxMultiplier !== undefined) data.maxMultiplier = patch.maxMultiplier;
-  if (patch.minBet !== undefined) data.minBet = patch.minBet;
-  if (patch.maxBet !== undefined) data.maxBet = patch.maxBet;
-  if (patch.returnCap !== undefined) data.returnCap = patch.returnCap;
-  if (patch.playerReturnPct !== undefined) data.playerReturnPct = patch.playerReturnPct;
-  if (patch.engagementEnabled !== undefined) data.engagementEnabled = patch.engagementEnabled;
-  if (patch.engagementHookGames !== undefined) data.engagementHookGames = patch.engagementHookGames;
-  if (patch.engagementHookPct !== undefined) data.engagementHookPct = patch.engagementHookPct;
-  if (patch.engagementTightPct !== undefined) data.engagementTightPct = patch.engagementTightPct;
-
+  const keys: (keyof PlatformSettings)[] = [
+    "houseEdge",
+    "pointsPerUnit",
+    "maxMultiplier",
+    "minBet",
+    "maxBet",
+    "returnCap",
+    "playerReturnPct",
+    "engagementEnabled",
+    "engagementHookGames",
+    "engagementHookPct",
+    "engagementTightPct",
+    "winRatePct",
+    "housePool",
+  ];
+  for (const k of keys) {
+    if (patch[k] !== undefined) data[k] = patch[k];
+  }
   await prisma.platformConfig.update({ where: { id: "default" }, data });
   return getPlatformSettings();
+}
+
+/** Bets increase pool; wins decrease pool. */
+export async function adjustHousePool(delta: number) {
+  await getPlatformSettings();
+  const row: any = await prisma.platformConfig.findUnique({ where: { id: "default" } });
+  const next = Math.max(0, Math.round((Number(row.housePool || 0) + delta) * 100) / 100);
+  await prisma.platformConfig.update({
+    where: { id: "default" },
+    data: { housePool: next } as any,
+  });
+  return next;
 }
 
 export type PayoutContext = {
@@ -77,12 +104,10 @@ export type PayoutContext = {
   engagementMode?: string;
   gamesPlayed?: number;
   eventMultiplier?: number;
+  /** session flagged as loser by win-rate control */
+  forceZeroWin?: boolean;
 };
 
-/**
- * Score builds a theoretical win, then hard-capped by playerReturnPct% of stake.
- * Example: bet 20, playerReturnPct 20 → max R$ 4.00 back (house keeps the rest of the edge).
- */
 export function calcPayout(
   bet: number,
   score: number,
@@ -90,17 +115,16 @@ export function calcPayout(
   ctx: PayoutContext = {}
 ): number {
   if (bet <= 0 || score <= 0) return 0;
+  if (ctx.forceZeroWin) return 0;
 
-  let pct = ctx.playerReturnPct != null ? Number(ctx.playerReturnPct) : settings.playerReturnPct;
+  let pct =
+    ctx.playerReturnPct != null ? Number(ctx.playerReturnPct) : settings.playerReturnPct;
 
-  // engagement: first N games more generous, then tight
   const mode = ctx.engagementMode || "off";
   const played = ctx.gamesPlayed ?? 0;
-  if (mode === "force_hook") {
-    pct = settings.engagementHookPct;
-  } else if (mode === "force_tight") {
-    pct = settings.engagementTightPct;
-  } else if (mode === "auto" || settings.engagementEnabled) {
+  if (mode === "force_hook") pct = settings.engagementHookPct;
+  else if (mode === "force_tight") pct = settings.engagementTightPct;
+  else if (mode === "auto" || settings.engagementEnabled) {
     pct =
       played < settings.engagementHookGames
         ? settings.engagementHookPct
@@ -112,12 +136,41 @@ export function calcPayout(
   const eventMult = ctx.eventMultiplier && ctx.eventMultiplier > 0 ? ctx.eventMultiplier : 1;
   let net = bet * mult * (1 - settings.houseEdge) * eventMult;
 
+  // % of stake that can return (20 on R$20 bet => max R$4)
   const capByPct = bet * (Math.max(0, pct) / 100);
   const capByReturn = bet * settings.returnCap;
-  const cap = Math.min(capByPct, capByReturn);
-  if (net > cap) net = cap;
+  let cap = Math.min(capByPct, capByReturn);
 
+  // cannot pay more than house pool
+  if (settings.housePool >= 0) {
+    cap = Math.min(cap, settings.housePool);
+  }
+
+  if (net > cap) net = cap;
   return Math.floor(net * 100) / 100;
+}
+
+/** How close current theoretical payout is to the player cap (0–1) for difficulty. */
+export function difficultyFromPayoutProgress(
+  bet: number,
+  score: number,
+  settings: PlatformSettings,
+  ctx: PayoutContext = {}
+): number {
+  if (bet <= 0) return 0;
+  const uncapped = calcPayout(bet, score, { ...settings, housePool: 1e12 }, {
+    ...ctx,
+    forceZeroWin: false,
+  });
+  let pct =
+    ctx.playerReturnPct != null ? Number(ctx.playerReturnPct) : settings.playerReturnPct;
+  const cap = bet * (Math.max(0, pct) / 100);
+  if (cap <= 0) return 1;
+  const ratio = uncapped / cap;
+  if (ratio < 0.5) return 0;
+  if (ratio < 0.75) return 0.35;
+  if (ratio < 0.9) return 0.65;
+  return 0.95;
 }
 
 export async function getActiveEventMultiplier(): Promise<number> {
@@ -131,4 +184,10 @@ export async function getActiveEventMultiplier(): Promise<number> {
     orderBy: { multiplier: "desc" },
   });
   return ev ? Number(ev.multiplier) : 1;
+}
+
+/** Decide if this session is in the "can win" cohort for winRatePct. */
+export function rollSessionCanWin(winRatePct: number): boolean {
+  const rate = Math.max(0, Math.min(100, winRatePct)) / 100;
+  return Math.random() < rate;
 }

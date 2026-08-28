@@ -60,7 +60,7 @@ export async function register(
       balance: config.initialBalance,
       role: "user",
       status: "active",
-      emailVerified: false,
+      emailVerified: true,
     },
   });
 
@@ -83,13 +83,6 @@ export async function register(
     }
   }
 
-  const verifyToken = await issueVerifyToken(user.id);
-  try {
-    await sendVerificationEmail(user.email, verifyToken);
-  } catch (err) {
-    console.error("[auth] verify email send failed:", (err as Error).message);
-  }
-
   const token = signToken({
     userId: user.id,
     email: user.email,
@@ -99,7 +92,7 @@ export async function register(
   return {
     token,
     user: publicUser(user),
-    message: "Account created. Please verify your email.",
+    message: "Account created",
   };
 }
 

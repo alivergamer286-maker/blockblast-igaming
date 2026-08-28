@@ -63,7 +63,6 @@ export const getLeaderboard = () => api.get("/leaderboard");
 export const getDailyLeaderboard = () => api.get("/leaderboard/daily");
 export const getHistory = () => api.get("/history");
 
-// Ops (admin) — path not named admin
 export const adminStats = () => api.get("/ops/stats");
 export const adminUsers = (page = 1, search = "") =>
   api.get("/ops/users", { params: { page, search: search || undefined } });
@@ -77,6 +76,10 @@ export const adminAdjustBalance = (
   amount: number,
   reason: string
 ) => api.post(`/ops/users/${id}/balance`, { amount, reason });
+export const adminSetUserEconomy = (
+  id: string,
+  body: { playerReturnPct?: number | null; engagementMode?: string }
+) => api.patch(`/ops/users/${id}/economy`, body);
 export const adminAudit = (page = 1) =>
   api.get("/ops/audit", { params: { page } });
 export const adminWithdrawals = (status?: string, page = 1) =>
@@ -97,5 +100,11 @@ export const adminCreateAffiliate = (body: {
 export const adminAffiliateDetail = (userId: string) =>
   api.get(`/ops/affiliates/${userId}`);
 export const adminGetConfig = () => api.get("/ops/config");
-export const adminUpdateConfig = (body: Record<string, number>) =>
+export const adminUpdateConfig = (body: Record<string, number | boolean>) =>
   api.patch("/ops/config", body);
+export const adminEvents = () => api.get("/ops/events");
+export const adminCreateEvent = (body: Record<string, unknown>) =>
+  api.post("/ops/events", body);
+export const adminUpdateEvent = (id: string, body: Record<string, unknown>) =>
+  api.patch(`/ops/events/${id}`, body);
+export const adminDeleteEvent = (id: string) => api.delete(`/ops/events/${id}`);

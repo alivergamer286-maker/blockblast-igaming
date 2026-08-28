@@ -31,13 +31,21 @@ export async function listUsers(page = 1, limit = 20, search?: string) {
         createdAt: true,
         referredById: true,
         emailVerified: true,
+        playerReturnPct: true,
+        engagementMode: true,
+        gamesPlayed: true,
       },
     }),
     prisma.user.count({ where }),
   ]);
 
   return {
-    items: items.map((u) => ({ ...u, balance: Number(u.balance) })),
+    items: items.map((u) => ({
+      ...u,
+      balance: Number(u.balance),
+      playerReturnPct:
+        u.playerReturnPct != null ? Number(u.playerReturnPct) : null,
+    })),
     total,
     page,
     limit,

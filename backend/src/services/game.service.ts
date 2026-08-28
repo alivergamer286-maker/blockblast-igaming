@@ -7,7 +7,11 @@ import {
 } from "../game/engine";
 import { Piece } from "../game/pieces";
 import { debit, credit } from "./wallet.service";
-import { getPlatformSettings, calcPayout } from "./platform.service";
+import {
+  getPlatformSettings,
+  calcPayout,
+  getActiveEventMultiplier,
+} from "./platform.service";
 import { recordAffiliateWager } from "./affiliate.service";
 
 function asBoard(value: unknown): Board {
@@ -22,15 +26,25 @@ function round2(n: number) {
   return Math.floor(n * 100) / 100;
 }
 
+async function payoutCtx(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+  const eventMultiplier = await getActiveEventMultiplier();
+  return {
+    user,
+    ctx: {
+      playerReturnPct: user.playerReturnPct != null ? Number(user.playerReturnPct) : null,
+      engagementMode: user.engagementMode || "off",
+      gamesPlayed: user.gamesPlayed ?? 0,
+      eventMultiplier,
+    },
+  };
+}
+
 export async function startSession(userId: string, betAmount: number = 0) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error("User not found");
-  if (!user.emailVerified) {
-    throw new Error("Confirm your email before playing");
-  }
-  if (user.status !== "active") {
-    throw new Error("Account not active");
-  }
+  if (user.status !== "active") throw new Error("Account not active");
 
   const settings = await getPlatformSettings();
   const bet = round2(Number(betAmount) || 0);
@@ -52,6 +66,11 @@ export async function startSession(userId: string, betAmount: number = 0) {
     await debit(userId, bet, "bet", `bet:${userId}:${Date.now()}`, "Game stake");
     await recordAffiliateWager(userId, bet);
   }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { gamesPlayed: { increment: 1 } },
+  });
 
   const state = createInitialState();
 
@@ -81,9 +100,7 @@ export async function startSession(userId: string, betAmount: number = 0) {
     settings: {
       minBet: settings.minBet,
       maxBet: settings.maxBet,
-      pointsPerUnit: settings.pointsPerUnit,
-      maxMultiplier: settings.maxMultiplier,
-      returnCap: settings.returnCap,
+      playerReturnPct: settings.playerReturnPct,
     },
   };
 }
@@ -101,6 +118,7 @@ export async function placePiece(
   if (!session) throw new Error("Active session not found");
 
   const settings = await getPlatformSettings();
+  const { ctx } = await payoutCtx(userId);
   const board = asBoard(session.boardState);
   const pieces = asPieces(session.currentPieces);
   const bet = Number(session.betAmount);
@@ -122,7 +140,7 @@ export async function placePiece(
   const newLines = session.linesCleared + result.linesCleared;
   const newCombo = result.linesCleared > 0 ? session.combos + 1 : 0;
   const newMaxCombo = Math.max(session.maxCombo, newCombo);
-  const potentialWin = calcPayout(bet, newScore, settings);
+  const potentialWin = calcPayout(bet, newScore, settings, ctx);
 
   let remainingPieces = pieces.filter((_, i) => i !== pieceIndex);
   if (result.newPieces) remainingPieces = result.newPieces;
@@ -196,8 +214,9 @@ export async function endSession(userId: string, sessionId: string) {
   if (!session) throw new Error("Active session not found");
 
   const settings = await getPlatformSettings();
+  const { ctx } = await payoutCtx(userId);
   const bet = Number(session.betAmount);
-  const payout = calcPayout(bet, session.score, settings);
+  const payout = calcPayout(bet, session.score, settings, ctx);
 
   await prisma.gameSession.update({
     where: { id: sessionId },

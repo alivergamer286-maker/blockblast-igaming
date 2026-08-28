@@ -11,6 +11,9 @@ import {
   getPlatformSettings,
   calcPayout,
   getActiveEventMultiplier,
+  adjustHousePool,
+  difficultyFromPayoutProgress,
+  rollSessionCanWin,
 } from "./platform.service";
 import { recordAffiliateWager } from "./affiliate.service";
 
@@ -26,7 +29,7 @@ function round2(n: number) {
   return Math.floor(n * 100) / 100;
 }
 
-async function payoutCtx(userId: string) {
+async function payoutCtx(userId: string, forceZeroWin?: boolean) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error("User not found");
   const eventMultiplier = await getActiveEventMultiplier();
@@ -37,6 +40,7 @@ async function payoutCtx(userId: string) {
       engagementMode: user.engagementMode || "off",
       gamesPlayed: user.gamesPlayed ?? 0,
       eventMultiplier,
+      forceZeroWin: Boolean(forceZeroWin),
     },
   };
 }
@@ -65,6 +69,8 @@ export async function startSession(userId: string, betAmount: number = 0) {
   if (bet > 0) {
     await debit(userId, bet, "bet", `bet:${userId}:${Date.now()}`, "Game stake");
     await recordAffiliateWager(userId, bet);
+    // stake feeds the house pool (available to pay winners)
+    await adjustHousePool(bet);
   }
 
   await prisma.user.update({
@@ -72,7 +78,12 @@ export async function startSession(userId: string, betAmount: number = 0) {
     data: { gamesPlayed: { increment: 1 } },
   });
 
-  const state = createInitialState();
+  // only winRatePct% of sessions can cash out non-zero (pool still applies)
+  const canWin = bet <= 0 ? true : rollSessionCanWin(settings.winRatePct);
+  // if pool is empty, nobody can extract real money
+  const poolOk = settings.housePool + bet > 0.01;
+
+  const state = createInitialState(0);
 
   const session = await prisma.gameSession.create({
     data: {
@@ -87,7 +98,8 @@ export async function startSession(userId: string, betAmount: number = 0) {
       pieceIndex: 0,
       betAmount: bet,
       potentialWin: 0,
-    },
+      canWin: canWin && poolOk,
+    } as any,
   });
 
   return {
@@ -118,10 +130,13 @@ export async function placePiece(
   if (!session) throw new Error("Active session not found");
 
   const settings = await getPlatformSettings();
-  const { ctx } = await payoutCtx(userId);
+  const forceZero = (session as any).canWin === false;
+  const { ctx } = await payoutCtx(userId, forceZero);
   const board = asBoard(session.boardState);
   const pieces = asPieces(session.currentPieces);
   const bet = Number(session.betAmount);
+
+  const bias = difficultyFromPayoutProgress(bet, session.score, settings, ctx);
 
   const state: GameState = {
     board,
@@ -133,14 +148,16 @@ export async function placePiece(
     streak: session.combos,
   };
 
-  const result = applyMove(state, pieceIndex, row, col);
+  const result = applyMove(state, pieceIndex, row, col, bias);
   if (!result.success) throw new Error(result.message || "Invalid move");
 
   const newScore = session.score + result.totalPoints;
   const newLines = session.linesCleared + result.linesCleared;
   const newCombo = result.linesCleared > 0 ? session.combos + 1 : 0;
   const newMaxCombo = Math.max(session.maxCombo, newCombo);
-  const potentialWin = calcPayout(bet, newScore, settings, ctx);
+  // refresh pool into settings for cap
+  const liveSettings = await getPlatformSettings();
+  const potentialWin = calcPayout(bet, newScore, liveSettings, ctx);
 
   let remainingPieces = pieces.filter((_, i) => i !== pieceIndex);
   if (result.newPieces) remainingPieces = result.newPieces;
@@ -176,6 +193,7 @@ export async function placePiece(
     updateData.payout = payout;
     if (payout > 0) {
       await credit(userId, payout, "win", `win:${sessionId}`, `Win score ${newScore}`);
+      await adjustHousePool(-payout);
     }
     await prisma.score.create({
       data: {
@@ -214,7 +232,8 @@ export async function endSession(userId: string, sessionId: string) {
   if (!session) throw new Error("Active session not found");
 
   const settings = await getPlatformSettings();
-  const { ctx } = await payoutCtx(userId);
+  const forceZero = (session as any).canWin === false;
+  const { ctx } = await payoutCtx(userId, forceZero);
   const bet = Number(session.betAmount);
   const payout = calcPayout(bet, session.score, settings, ctx);
 
@@ -236,6 +255,7 @@ export async function endSession(userId: string, sessionId: string) {
       `cashout:${sessionId}`,
       `Cashout score ${session.score}`
     );
+    await adjustHousePool(-payout);
   }
 
   await prisma.score.create({

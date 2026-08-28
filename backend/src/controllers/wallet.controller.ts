@@ -2,26 +2,9 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import * as walletService from "../services/wallet.service";
 import { prisma } from "../utils/prisma";
-import { config } from "../config";
-
-function onlyDigits(s: string) {
-  return s.replace(/\D/g, "");
-}
-
-function validCpf(cpf: string): boolean {
-  const d = onlyDigits(cpf);
-  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
-  let sum = 0;
-  for (let i = 0; i < 9; i++) sum += parseInt(d[i], 10) * (10 - i);
-  let r = (sum * 10) % 11;
-  if (r === 10) r = 0;
-  if (r !== parseInt(d[9], 10)) return false;
-  sum = 0;
-  for (let i = 0; i < 10; i++) sum += parseInt(d[i], 10) * (11 - i);
-  r = (sum * 10) % 11;
-  if (r === 10) r = 0;
-  return r === parseInt(d[10], 10);
-}
+import { assertCpfAvailable, normalizeCpf } from "../utils/cpf";
+import { adjustHousePool, getPlatformSettings } from "../services/platform.service";
+import { writeAudit } from "../services/audit.service";
 
 export async function getBalance(req: Request, res: Response) {
   try {
@@ -34,8 +17,14 @@ export async function getBalance(req: Request, res: Response) {
 
 export async function getTransactions(req: Request, res: Response) {
   try {
-    const txs = await walletService.getTransactions(req.user!.userId);
-    res.json({ transactions: txs });
+    const items = await walletService.getTransactions(req.user!.userId);
+    res.json({
+      items: items.map((t) => ({
+        ...t,
+        amount: Number(t.amount),
+        balanceAfter: Number(t.balanceAfter),
+      })),
+    });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -45,68 +34,133 @@ export async function requestWithdraw(req: Request, res: Response) {
   try {
     const schema = z.object({
       amount: z.number().positive(),
-      cpf: z.string().min(11).max(14),
+      cpf: z.string().min(11),
       fullName: z.string().min(3).max(120),
       pixKey: z.string().min(3).max(120),
     });
     const body = schema.parse(req.body);
-    const cpf = onlyDigits(body.cpf);
-    if (!validCpf(cpf)) {
-      res.status(400).json({ error: "Invalid CPF" });
-      return;
-    }
-    if (body.amount > config.maxWithdrawal) {
-      res.status(400).json({ error: `Max withdrawal is ${config.maxWithdrawal}` });
-      return;
-    }
-
     const userId = req.user!.userId;
+
+    const digits = await assertCpfAvailable(prisma, body.cpf, userId);
+
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      res.status(400).json({ error: "User not found" });
-      return;
-    }
-    if (!user.emailVerified) {
-      res.status(400).json({ error: "Verify email before withdrawing" });
-      return;
-    }
+    if (!user) throw new Error("User not found");
 
-    await walletService.debit(
-      userId,
-      body.amount,
-      "withdraw_hold",
-      `wd:${userId}:${Date.now()}`,
-      "Withdrawal hold"
-    );
-
+    // bind CPF to account if empty; if different CPF already set — reject
+    if (user.cpf && user.cpf !== digits) {
+      throw new Error("CPF diferente do cadastrado nesta conta");
+    }
     if (!user.cpf) {
       await prisma.user.update({
         where: { id: userId },
-        data: { cpf },
+        data: { cpf: digits, cpfVerified: true } as any,
       });
     }
+
+    const amount = Math.round(body.amount * 100) / 100;
+    if (amount > Number(user.balance)) throw new Error("Saldo insuficiente");
+
+    await walletService.debit(
+      userId,
+      amount,
+      "withdraw_hold",
+      `wdhold:${userId}:${Date.now()}`,
+      "Withdrawal hold"
+    );
 
     const w = await prisma.withdrawalRequest.create({
       data: {
         userId,
-        amount: body.amount,
+        amount,
         status: "pending",
-        cpf,
+        cpf: digits,
         fullName: body.fullName.trim(),
         pixKey: body.pixKey.trim(),
       },
     });
 
-    res.status(201).json({
-      id: w.id,
-      amount: Number(w.amount),
-      status: w.status,
-    });
+    res.status(201).json({ id: w.id, status: w.status, amount });
   } catch (err: any) {
-    if (err.name === "ZodError") {
-      res.status(400).json({ error: err.errors });
+    const msg = err.message || "Erro";
+    res.status(400).json({ error: msg });
+  }
+}
+
+/** Player deposit intent — requires unique CPF; credits only after admin or pool top-up path */
+export async function requestDeposit(req: Request, res: Response) {
+  try {
+    const schema = z.object({
+      amount: z.number().positive().max(50000),
+      cpf: z.string().min(11),
+    });
+    const body = schema.parse(req.body);
+    const userId = req.user!.userId;
+    const digits = await assertCpfAvailable(prisma, body.cpf, userId);
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error("User not found");
+
+    if (user.cpf && user.cpf !== digits) {
+      throw new Error("CPF diferente do cadastrado nesta conta");
+    }
+    if (!user.cpf) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { cpf: digits, cpfVerified: true } as any,
+      });
+    }
+
+    // Without payment gateway: create pending note via audit; admin credits later.
+    // Optionally auto-credit in demo if DEPOSIT_AUTO=true
+    const amount = Math.round(body.amount * 100) / 100;
+    if (process.env.DEPOSIT_AUTO === "true") {
+      await walletService.credit(
+        userId,
+        amount,
+        "deposit",
+        `dep:${userId}:${Date.now()}`,
+        "Deposit"
+      );
+      await adjustHousePool(amount);
+      res.status(201).json({ status: "credited", amount });
       return;
     }
-    res.status(400).json({ error: err.message });
+
+    await writeAudit({
+      actorId: userId,
+      action: "deposit.request",
+      targetType: "user",
+      targetId: userId,
+      meta: { amount, cpf: digits },
+    });
+
+    res.status(201).json({
+      status: "pending",
+      message: "Depósito registrado. Aguarde confirmação (gateway ainda não ligado).",
+      amount,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Erro" });
+  }
+}
+
+export async function bindCpf(req: Request, res: Response) {
+  try {
+    const schema = z.object({ cpf: z.string().min(11) });
+    const body = schema.parse(req.body);
+    const userId = req.user!.userId;
+    const digits = await assertCpfAvailable(prisma, body.cpf, userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error("User not found");
+    if (user.cpf && user.cpf !== digits) {
+      throw new Error("CPF em uso");
+    }
+    await prisma.user.update({
+      where: { id: userId },
+      data: { cpf: digits, cpfVerified: true } as any,
+    });
+    res.json({ ok: true, cpf: digits });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Erro" });
   }
 }

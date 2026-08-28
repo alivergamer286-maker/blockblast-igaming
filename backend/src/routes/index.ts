@@ -38,7 +38,6 @@ router.get("/leaderboard", leaderboardController.global);
 router.get("/leaderboard/daily", leaderboardController.daily);
 router.get("/history", ...authed, leaderboardController.history);
 
-// Affiliate self-service
 router.get("/partner/me", ...authed, async (req: Request, res: Response) => {
   try {
     const u = await prisma.user.findUnique({
@@ -49,8 +48,7 @@ router.get("/partner/me", ...authed, async (req: Request, res: Response) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const data = await affiliateService.getAffiliateDetail(req.user!.userId);
-    res.json(data);
+    res.json(await affiliateService.getAffiliateDetail(req.user!.userId));
   } catch {
     res.status(404).json({ error: "Not found" });
   }
@@ -60,6 +58,7 @@ router.get("/ops/stats", ...ops, adminController.stats);
 router.get("/ops/users", ...ops, adminController.users);
 router.patch("/ops/users/:id/status", ...ops, adminController.setStatus);
 router.post("/ops/users/:id/balance", ...ops, adminController.adjustBalance);
+router.patch("/ops/users/:id/economy", ...ops, adminController.setUserEconomy);
 router.get("/ops/audit", ...ops, adminController.audit);
 router.get("/ops/withdrawals", ...ops, adminController.withdrawals);
 router.patch("/ops/withdrawals/:id", ...ops, adminController.reviewWithdrawal);
@@ -68,6 +67,10 @@ router.post("/ops/affiliates", ...ops, adminController.createAffiliate);
 router.get("/ops/affiliates/:userId", ...ops, adminController.affiliateDetail);
 router.get("/ops/config", ...ops, adminController.getConfig);
 router.patch("/ops/config", ...ops, adminController.updateConfig);
+router.get("/ops/events", ...ops, adminController.events);
+router.post("/ops/events", ...ops, adminController.createEvent);
+router.patch("/ops/events/:id", ...ops, adminController.updateEvent);
+router.delete("/ops/events/:id", ...ops, adminController.deleteEvent);
 
 router.all("/admin/*", (_req, res) => {
   res.status(404).json({ error: "Not found" });

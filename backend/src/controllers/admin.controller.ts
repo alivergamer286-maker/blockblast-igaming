@@ -3,6 +3,9 @@ import { z } from "zod";
 import * as adminService from "../services/admin.service";
 import * as affiliateService from "../services/affiliate.service";
 import * as platformService from "../services/platform.service";
+import * as eventService from "../services/event.service";
+import { prisma } from "../utils/prisma";
+import { writeAudit } from "../services/audit.service";
 
 function clientIp(req: Request): string | undefined {
   const xf = req.headers["x-forwarded-for"];
@@ -13,7 +16,7 @@ function clientIp(req: Request): string | undefined {
 export async function stats(_req: Request, res: Response) {
   try {
     res.json(await adminService.dashboardStats());
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Error" });
   }
 }
@@ -24,7 +27,7 @@ export async function users(req: Request, res: Response) {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
     res.json(await adminService.listUsers(page, limit, search));
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Error" });
   }
 }
@@ -70,12 +73,50 @@ export async function adjustBalance(req: Request, res: Response) {
   }
 }
 
+export async function setUserEconomy(req: Request, res: Response) {
+  try {
+    const schema = z.object({
+      playerReturnPct: z.number().min(0).max(500).nullable().optional(),
+      engagementMode: z.enum(["off", "auto", "force_hook", "force_tight"]).optional(),
+    });
+    const body = schema.parse(req.body);
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        ...(body.playerReturnPct !== undefined
+          ? { playerReturnPct: body.playerReturnPct }
+          : {}),
+        ...(body.engagementMode !== undefined
+          ? { engagementMode: body.engagementMode }
+          : {}),
+      },
+    });
+    await writeAudit({
+      actorId: req.user!.userId,
+      action: "user.economy",
+      targetType: "user",
+      targetId: user.id,
+      meta: body,
+      ip: clientIp(req),
+    });
+    res.json({
+      id: user.id,
+      playerReturnPct:
+        user.playerReturnPct != null ? Number(user.playerReturnPct) : null,
+      engagementMode: user.engagementMode,
+      gamesPlayed: user.gamesPlayed,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 export async function audit(req: Request, res: Response) {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     res.json(await adminService.listAudit(page, limit));
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Error" });
   }
 }
@@ -86,7 +127,7 @@ export async function withdrawals(req: Request, res: Response) {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     res.json(await adminService.listWithdrawals(status, page, limit));
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Error" });
   }
 }
@@ -116,7 +157,7 @@ export async function affiliates(req: Request, res: Response) {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     res.json(await affiliateService.listAffiliates(page, 20));
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Error" });
   }
 }
@@ -149,7 +190,7 @@ export async function affiliateDetail(req: Request, res: Response) {
 export async function getConfig(_req: Request, res: Response) {
   try {
     res.json(await platformService.getPlatformSettings());
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Error" });
   }
 }
@@ -163,9 +204,68 @@ export async function updateConfig(req: Request, res: Response) {
       minBet: z.number().min(0).optional(),
       maxBet: z.number().min(0).optional(),
       returnCap: z.number().min(0).max(100).optional(),
+      playerReturnPct: z.number().min(0).max(500).optional(),
+      engagementEnabled: z.boolean().optional(),
+      engagementHookGames: z.number().int().min(0).max(1000).optional(),
+      engagementHookPct: z.number().min(0).max(500).optional(),
+      engagementTightPct: z.number().min(0).max(500).optional(),
     });
     const body = schema.parse(req.body);
     res.json(await platformService.updatePlatformSettings(body));
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function events(_req: Request, res: Response) {
+  try {
+    res.json({ items: await eventService.listEvents() });
+  } catch {
+    res.status(500).json({ error: "Error" });
+  }
+}
+
+export async function createEvent(req: Request, res: Response) {
+  try {
+    const schema = z.object({
+      title: z.string().min(2).max(120),
+      description: z.string().max(500).optional(),
+      multiplier: z.number().min(1).max(10),
+      startsAt: z.string(),
+      endsAt: z.string(),
+      active: z.boolean().optional(),
+    });
+    const body = schema.parse(req.body);
+    res.status(201).json(
+      await eventService.createEvent(req.user!.userId, body, clientIp(req))
+    );
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function updateEvent(req: Request, res: Response) {
+  try {
+    const schema = z.object({
+      title: z.string().min(2).max(120).optional(),
+      description: z.string().max(500).optional(),
+      multiplier: z.number().min(1).max(10).optional(),
+      startsAt: z.string().optional(),
+      endsAt: z.string().optional(),
+      active: z.boolean().optional(),
+    });
+    const body = schema.parse(req.body);
+    res.json(
+      await eventService.updateEvent(req.user!.userId, req.params.id, body, clientIp(req))
+    );
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function deleteEvent(req: Request, res: Response) {
+  try {
+    res.json(await eventService.deleteEvent(req.user!.userId, req.params.id, clientIp(req)));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

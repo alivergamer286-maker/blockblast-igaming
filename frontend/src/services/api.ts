@@ -45,6 +45,9 @@ export const requestWithdraw = (body: {
   fullName: string;
   pixKey: string;
 }) => api.post("/wallet/withdraw", body);
+export const requestDeposit = (body: { amount: number; cpf: string }) =>
+  api.post("/wallet/deposit", body);
+export const bindCpf = (cpf: string) => api.post("/wallet/cpf", { cpf });
 
 export const startGame = (betAmount = 0) =>
   api.post("/game/start", { betAmount });
@@ -80,6 +83,8 @@ export const adminSetUserEconomy = (
   id: string,
   body: { playerReturnPct?: number | null; engagementMode?: string }
 ) => api.patch(`/ops/users/${id}/economy`, body);
+export const adminSetUserRole = (id: string, role: string) =>
+  api.patch(`/ops/users/${id}/role`, { role });
 export const adminAudit = (page = 1) =>
   api.get("/ops/audit", { params: { page } });
 export const adminWithdrawals = (status?: string, page = 1) =>

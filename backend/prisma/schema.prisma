@@ -142,6 +142,8 @@ model PlatformConfig {
 
   maxBet              Decimal  @default(100) @db.Decimal(18, 2)
 
+  housePool           Decimal  @default(0) @db.Decimal(18, 2)
+
   returnCap           Decimal  @default(2.0) @db.Decimal(10, 4)
 
   // % of stake that returns to player (20 = max R$4 on R$20 bet). House keeps the rest of the stake edge.

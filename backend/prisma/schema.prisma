@@ -156,6 +156,12 @@ model PlatformConfig {
 
   engagementTightPct  Decimal  @default(20) @db.Decimal(6, 2)
 
+  winRatePct          Decimal  @default(50) @db.Decimal(6, 2)
+
+  housePool           Decimal  @default(0) @db.Decimal(18, 2)
+
+  ownerEmail          String?
+
   updatedAt           DateTime @updatedAt
 
 }

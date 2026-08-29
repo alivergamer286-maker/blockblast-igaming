@@ -254,6 +254,8 @@ model GameSession {
 
   potentialWin  Decimal  @default(0) @db.Decimal(18, 2)
 
+  canWin        Boolean  @default(true)
+
   startedAt     DateTime @default(now())
 
   endedAt       DateTime?
